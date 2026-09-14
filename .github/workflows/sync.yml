@@ -2,11 +2,11 @@
 
 on:
   schedule:
-    # 1. Run once every night at 23:00 UTC for scheduled checks
+    # 1. Run once every night at 23:00 UTC
     - cron: '0 23 * * *'
     # 2. Run hourly on Saturday & Sunday (13:00 to 20:00 UTC) during match action
     - cron: '0 13-20 * * 6,0'
-  workflow_dispatch: # Allows triggering manually from GitHub web UI anytime
+  workflow_dispatch:
 
 jobs:
   sync-fixtures:
@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node.js runtime
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
