@@ -36,8 +36,15 @@ export interface TeamTrajectoryRow {
   team_id: number;
   season: string;
   games_played: number;
-  current_points: number;
-  last_year_points: number | null;
+  is_completed: boolean;
+  cumulative_points: number;
+  cumulative_goals_for: number;
+  cumulative_goals_against: number;
+  baseline_points: number | null;
+  baseline_goals_for: number | null;
+  baseline_goals_against: number | null;
   same_opponent_points: number | null;
+  same_opponent_goals_for: number | null;
+  same_opponent_goals_against: number | null;
   updated_at: string;
 }

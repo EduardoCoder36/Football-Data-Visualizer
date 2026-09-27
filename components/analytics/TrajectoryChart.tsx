@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -11,12 +11,22 @@ import {
 import { TeamOption } from "./TeamSelectorBar";
 import { getTeamColor } from "../../constants/teamColors";
 
+import { MetricType } from "../../types/trajectory";
+import { MetricToggle } from "../charts/MetricToggle";
+
 export interface TrajectoryDataRow {
   team_id: number;
   games_played: number;
-  current_points: number;
-  last_year_points: number | null;
+  is_completed: boolean;
+  cumulative_points: number;
+  cumulative_goals_for: number;
+  cumulative_goals_against: number;
+  baseline_points: number | null;
+  baseline_goals_for: number | null;
+  baseline_goals_against: number | null;
   same_opponent_points: number | null;
+  same_opponent_goals_for: number | null;
+  same_opponent_goals_against: number | null;
 }
 
 export interface TrajectoryChartProps {
@@ -31,11 +41,12 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
   trajectories,
 }) => {
   const [isZoomed, setIsZoomed] = useState(true);
+  const [activeMetric, setActiveMetric] = useState<MetricType>("PTS");
 
-  // 1. Calculate the furthest game played among selected teams
-  const { maxGamesPlayed, maxPoints } = useMemo(() => {
+  // 1. Calculate the furthest game played among selected teams and the maximum metric value
+  const { maxGamesPlayed, maxMetricValue } = useMemo(() => {
     let maxGP = 1;
-    let maxPts = 3;
+    let maxVal = activeMetric === "PTS" ? 3 : 2;
 
     trajectories.forEach((traj) => {
       if (!selectedTeamIds.includes(traj.team_id)) return;
@@ -44,19 +55,43 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
         maxGP = traj.games_played;
       }
 
-      const pts = Math.max(
-        traj.current_points ?? 0,
-        traj.last_year_points ?? 0,
-        traj.same_opponent_points ?? 0
-      );
+      let val = 0;
+      if (activeMetric === "PTS") {
+        val = Math.max(
+          traj.cumulative_points ?? 0,
+          traj.baseline_points ?? 0,
+          traj.same_opponent_points ?? 0
+        );
+      } else if (activeMetric === "GF") {
+        val = Math.max(
+          traj.cumulative_goals_for ?? 0,
+          traj.baseline_goals_for ?? 0,
+          traj.same_opponent_goals_for ?? 0
+        );
+      } else if (activeMetric === "GA") {
+        val = Math.max(
+          traj.cumulative_goals_against ?? 0,
+          traj.baseline_goals_against ?? 0,
+          traj.same_opponent_goals_against ?? 0
+        );
+      } else if (activeMetric === "COMBINED") {
+        val = Math.max(
+          traj.cumulative_goals_for ?? 0,
+          traj.baseline_goals_for ?? 0,
+          traj.same_opponent_goals_for ?? 0,
+          traj.cumulative_goals_against ?? 0,
+          traj.baseline_goals_against ?? 0,
+          traj.same_opponent_goals_against ?? 0
+        );
+      }
 
-      if (pts > maxPts) {
-        maxPts = pts;
+      if (val > maxVal) {
+        maxVal = val;
       }
     });
 
-    return { maxGamesPlayed: maxGP, maxPoints: maxPts };
-  }, [trajectories, selectedTeamIds]);
+    return { maxGamesPlayed: maxGP, maxMetricValue: maxVal };
+  }, [trajectories, selectedTeamIds, activeMetric]);
 
   // 2. Format data for Recharts (38 matchday slots)
   const chartData = useMemo(() => {
@@ -68,21 +103,66 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
       if (!selectedTeamIds.includes(traj.team_id)) return;
       const index = traj.games_played - 1;
       if (slots[index]) {
-        // @ts-ignore
-        slots[index][`team_${traj.team_id}_current`] = traj.current_points;
-        if (traj.last_year_points !== null) {
+        if (activeMetric === "PTS") {
           // @ts-ignore
-          slots[index][`team_${traj.team_id}_lastYear`] = traj.last_year_points;
-        }
-        if (traj.same_opponent_points !== null) {
+          slots[index][`team_${traj.team_id}_current`] = traj.cumulative_points;
+          if (traj.baseline_points !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_baseline`] = traj.baseline_points;
+          }
+          if (traj.same_opponent_points !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_sameOpponent`] = traj.same_opponent_points;
+          }
+        } else if (activeMetric === "GF") {
           // @ts-ignore
-          slots[index][`team_${traj.team_id}_sameOpponent`] = traj.same_opponent_points;
+          slots[index][`team_${traj.team_id}_current`] = traj.cumulative_goals_for;
+          if (traj.baseline_goals_for !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_baseline`] = traj.baseline_goals_for;
+          }
+          if (traj.same_opponent_goals_for !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_sameOpponent`] = traj.same_opponent_goals_for;
+          }
+        } else if (activeMetric === "GA") {
+          // @ts-ignore
+          slots[index][`team_${traj.team_id}_current`] = traj.cumulative_goals_against;
+          if (traj.baseline_goals_against !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_baseline`] = traj.baseline_goals_against;
+          }
+          if (traj.same_opponent_goals_against !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_sameOpponent`] = traj.same_opponent_goals_against;
+          }
+        } else if (activeMetric === "COMBINED") {
+          // @ts-ignore
+          slots[index][`team_${traj.team_id}_currentGF`] = traj.cumulative_goals_for;
+          if (traj.baseline_goals_for !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_baselineGF`] = traj.baseline_goals_for;
+          }
+          if (traj.same_opponent_goals_for !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_sameOpponentGF`] = traj.same_opponent_goals_for;
+          }
+          // @ts-ignore
+          slots[index][`team_${traj.team_id}_currentGA`] = traj.cumulative_goals_against;
+          if (traj.baseline_goals_against !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_baselineGA`] = traj.baseline_goals_against;
+          }
+          if (traj.same_opponent_goals_against !== null) {
+            // @ts-ignore
+            slots[index][`team_${traj.team_id}_sameOpponentGA`] = traj.same_opponent_goals_against;
+          }
         }
       }
     });
 
     return slots;
-  }, [trajectories, selectedTeamIds]);
+  }, [trajectories, selectedTeamIds, activeMetric]);
 
   const activeTeams = useMemo(() => {
     return teams.filter((t) => selectedTeamIds.includes(t.id));
@@ -93,12 +173,19 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
     ? [1, Math.max(5, Math.min(38, maxGamesPlayed + 1))]
     : [1, 38];
 
-  const yDomain = isZoomed
-    ? [0, Math.max(9, maxPoints + 3)]
-    : [0, 114];
+  const yDomain: any = isZoomed
+    ? [0, Math.max(activeMetric === "PTS" ? 9 : 3, maxMetricValue + Math.ceil(maxMetricValue * 0.1))]
+    : [0, 'auto'];
+
+  const yLabel = activeMetric === "PTS" ? "Points" : activeMetric === "COMBINED" ? "Goals" : activeMetric === "GF" ? "Goals Scored" : "Goals Conceded";
+  const unitSuffix = activeMetric === "PTS" ? "pts" : "goals";
 
   return (
     <div className="w-full h-full flex flex-col p-4 bg-slate-950">
+      <div className="mb-4">
+        <MetricToggle selectedMetric={activeMetric} onChange={setActiveMetric} />
+      </div>
+
       {/* Legend & Controls Header */}
       <div className="flex flex-wrap gap-4 items-center justify-between pb-3 text-xs text-slate-400 border-b border-slate-900 mb-2">
         <div className="flex items-center gap-6">
@@ -126,8 +213,8 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
           </button>
           <span className="text-slate-500 italic">
             {isZoomed
-              ? `Zoomed: GW 1–${xDomain[1]} | Max: ${yDomain[1]} pts`
-              : "Max: 114 pts (38 Matchdays)"}
+              ? `Zoomed: GW 1–${xDomain[1]} | Max: ${yDomain[1]} ${unitSuffix}`
+              : `Max: Auto (38 Matchdays)`}
           </span>
         </div>
       </div>
@@ -158,57 +245,78 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
               stroke="#64748b"
               tickCount={isZoomed ? 6 : 10}
               label={{
-                value: "Points",
+                value: yLabel,
                 angle: -90,
                 position: "insideLeft",
                 fill: "#64748b",
               }}
             />
             <Tooltip
-              contentStyle={{
-                backgroundColor: "#0f172a",
-                borderColor: "#334155",
-                borderRadius: "0.5rem",
-                color: "#f8fafc",
+              cursor={{ stroke: '#334155', strokeWidth: 1, strokeDasharray: '4 4' }}
+              content={({ active, payload, label }) => {
+                if (active && payload && payload.length) {
+                  return (
+                    <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 shadow-xl z-50">
+                      <p className="text-slate-300 font-semibold mb-2 border-b border-slate-800 pb-1">
+                        Matchday {label}
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {payload.map((entry: any, index: number) => (
+                          <div key={`item-${index}`} className="flex items-center gap-2 text-sm text-slate-100">
+                            <span
+                              className="w-3 h-3 rounded-full border border-slate-400 shadow-sm flex-shrink-0"
+                              style={{ backgroundColor: entry.color }}
+                            ></span>
+                            <span className="font-medium">{entry.name}:</span>
+                            <span className="font-bold">{entry.value} {unitSuffix}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
               }}
             />
 
             {activeTeams.map((team, idx) => {
-              const color = getTeamColor(team.id, idx);
+              const baseColor = getTeamColor(team.id, idx);
+              const gfColor = activeMetric === "COMBINED" ? "#10b981" : baseColor;
+              const gaColor = activeMetric === "COMBINED" ? "#f43f5e" : baseColor;
 
-              return (
-                <React.Fragment key={team.id}>
-                  {/* 1. Solid: Current Progress */}
+              const renderLines = (
+                suffix: string,
+                color: string,
+                currentLabel: string,
+                baselineLabel: string,
+                opponentLabel: string
+              ) => (
+                <React.Fragment key={`${team.id}_${suffix}`}>
                   <Line
                     type="monotone"
-                    dataKey={`team_${team.id}_current`}
-                    name={`${team.shortName} (Current)`}
+                    dataKey={`team_${team.id}_current${suffix}`}
+                    name={`${team.shortName} (${currentLabel})`}
                     stroke={color}
                     strokeWidth={3}
                     dot={{ r: 4, fill: color }}
                     connectNulls
                   />
-
-                  {/* 2 & 3: Historical lines omitted for promoted clubs */}
                   {!team.isPromoted && (
                     <>
-                      {/* Dashed: Last Year's Progress */}
                       <Line
                         type="monotone"
-                        dataKey={`team_${team.id}_lastYear`}
-                        name={`${team.shortName} (Last Year)`}
+                        dataKey={`team_${team.id}_baseline${suffix}`}
+                        name={`${team.shortName} (${baselineLabel})`}
                         stroke={color}
                         strokeWidth={1.5}
                         strokeDasharray="5 5"
                         dot={{ r: 2 }}
                         connectNulls
                       />
-
-                      {/* Dotted: Same Opponents Baseline */}
                       <Line
                         type="monotone"
-                        dataKey={`team_${team.id}_sameOpponent`}
-                        name={`${team.shortName} (Opponents Eq.)`}
+                        dataKey={`team_${team.id}_sameOpponent${suffix}`}
+                        name={`${team.shortName} (${opponentLabel})`}
                         stroke={color}
                         strokeWidth={1.5}
                         strokeDasharray="2 3"
@@ -219,6 +327,21 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
                   )}
                 </React.Fragment>
               );
+
+              if (activeMetric === "COMBINED") {
+                return (
+                  <React.Fragment key={team.id}>
+                    {renderLines("GF", gfColor, "Current GF", "Last Year GF", "Opponents Eq. GF")}
+                    {renderLines("GA", gaColor, "Current GA", "Last Year GA", "Opponents Eq. GA")}
+                  </React.Fragment>
+                );
+              } else if (activeMetric === "GF") {
+                return renderLines("", gfColor, "Current GF", "Last Year GF", "Opponents Eq. GF");
+              } else if (activeMetric === "GA") {
+                return renderLines("", gaColor, "Current GA", "Last Year GA", "Opponents Eq. GA");
+              } else {
+                return renderLines("", baseColor, "Current", "Last Year", "Opponents Eq.");
+              }
             })}
           </LineChart>
         </ResponsiveContainer>

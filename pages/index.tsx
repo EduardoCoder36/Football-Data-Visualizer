@@ -38,7 +38,7 @@ export default function DashboardPage() {
       // 3. Fetch trajectories
       const { data: trajectoryRows } = await supabase
         .from("team_trajectories")
-        .select("team_id, games_played, current_points, last_year_points, same_opponent_points")
+        .select("team_id, games_played, is_completed, cumulative_points, cumulative_goals_for, cumulative_goals_against, baseline_points, baseline_goals_for, baseline_goals_against, same_opponent_points, same_opponent_goals_for, same_opponent_goals_against")
         .order("games_played", { ascending: true });
 
       if (teamRows) {

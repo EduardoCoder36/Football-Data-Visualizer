@@ -110,7 +110,7 @@ export class SyncEngine {
       .from("fixtures")
       .select("*")
       .eq("season", currentSeason)
-      .eq("status", "FINISHED")
+      .in("status", ["FINISHED", "POSTPONED"])
       .or(`home_team_id.eq.${team.id},away_team_id.eq.${team.id}`)
       .order("kickoff", { ascending: true });
 
@@ -125,40 +125,80 @@ export class SyncEngine {
       .order("kickoff", { ascending: true });
 
     let cumulativeCurrentPoints = 0;
+    let cumulativeGoalsFor = 0;
+    let cumulativeGoalsAgainst = 0;
     const trajectoryRecords = [];
 
     for (let i = 0; i < currentFixtures.length; i++) {
       const match = currentFixtures[i];
       const gamesPlayed = i + 1;
+      let isCompleted = true;
 
-      const earned = this.getPointsFromFixture(match, team.id);
-      cumulativeCurrentPoints += earned;
+      if (match.status === "FINISHED") {
+        if (match.home_score === null || match.away_score === null) {
+          console.error(`Corrupt payload detected for fixture ID ${match.id}`);
+          return; // Abort transaction
+        }
 
-      let lastYearPoints: number | null = null;
+        const isHome = match.home_team_id === team.id;
+        const teamScore = isHome ? match.home_score : match.away_score;
+        const opponentScore = isHome ? match.away_score : match.home_score;
+        
+        cumulativeGoalsFor += teamScore;
+        cumulativeGoalsAgainst += opponentScore;
+        
+        if (teamScore > opponentScore) cumulativeCurrentPoints += 3;
+        else if (teamScore === opponentScore) cumulativeCurrentPoints += 1;
+      } else if (match.status === "POSTPONED") {
+        isCompleted = false;
+        // Inherit previous totals
+      }
+
+      let baselinePoints: number | null = null;
+      let baselineGoalsFor: number | null = null;
+      let baselineGoalsAgainst: number | null = null;
       let sameOpponentPoints: number | null = null;
+      let sameOpponentGoalsFor: number | null = null;
+      let sameOpponentGoalsAgainst: number | null = null;
 
       if (!team.is_promoted && prevFixtures) {
         const pastFixturesUpToStage = prevFixtures.slice(0, gamesPlayed);
-        lastYearPoints = pastFixturesUpToStage.reduce(
-          (acc, f) => acc + this.getPointsFromFixture(f, team.id),
-          0
-        );
+        baselinePoints = 0;
+        baselineGoalsFor = 0;
+        baselineGoalsAgainst = 0;
 
-        sameOpponentPoints = this.calculateSameOpponentsPoints(
-          currentFixtures.slice(0, gamesPlayed),
+        for (const f of pastFixturesUpToStage) {
+          baselinePoints += this.getPointsFromFixture(f, team.id);
+          const isHomeF = f.home_team_id === team.id;
+          baselineGoalsFor += isHomeF ? (f.home_score || 0) : (f.away_score || 0);
+          baselineGoalsAgainst += isHomeF ? (f.away_score || 0) : (f.home_score || 0);
+        }
+
+        const metrics = this.calculateSameOpponentsMetrics(
+          currentFixtures.slice(0, gamesPlayed).filter((f: any) => f.status === 'FINISHED'),
           prevFixtures,
           team.id,
           promotedToRelegatedMap
         );
+        sameOpponentPoints = metrics.points;
+        sameOpponentGoalsFor = metrics.goalsFor;
+        sameOpponentGoalsAgainst = metrics.goalsAgainst;
       }
 
       trajectoryRecords.push({
         team_id: team.id,
         season: currentSeason,
         games_played: gamesPlayed,
-        current_points: cumulativeCurrentPoints,
-        last_year_points: lastYearPoints,
+        is_completed: isCompleted,
+        cumulative_points: cumulativeCurrentPoints,
+        cumulative_goals_for: cumulativeGoalsFor,
+        cumulative_goals_against: cumulativeGoalsAgainst,
+        baseline_points: baselinePoints,
+        baseline_goals_for: baselineGoalsFor,
+        baseline_goals_against: baselineGoalsAgainst,
         same_opponent_points: sameOpponentPoints,
+        same_opponent_goals_for: sameOpponentGoalsFor,
+        same_opponent_goals_against: sameOpponentGoalsAgainst,
         updated_at: new Date().toISOString(),
       });
     }
@@ -170,13 +210,15 @@ export class SyncEngine {
     if (error) console.error(`Error saving trajectory for team ${team.id}:`, error);
   }
 
-  private calculateSameOpponentsPoints(
+  private calculateSameOpponentsMetrics(
     currentMatchesPlayed: any[],
     prevSeasonFixtures: any[],
     teamId: number,
     promotedToRelegatedMap: Map<number, number>
-  ): number {
+  ): { points: number; goalsFor: number; goalsAgainst: number } {
     let opponentPoints = 0;
+    let opponentGoalsFor = 0;
+    let opponentGoalsAgainst = 0;
 
     for (const match of currentMatchesPlayed) {
       const isHome = match.home_team_id === teamId;
@@ -195,10 +237,13 @@ export class SyncEngine {
 
       if (historicMatch) {
         opponentPoints += this.getPointsFromFixture(historicMatch, teamId);
+        const isHistoricHome = historicMatch.home_team_id === teamId;
+        opponentGoalsFor += isHistoricHome ? (historicMatch.home_score || 0) : (historicMatch.away_score || 0);
+        opponentGoalsAgainst += isHistoricHome ? (historicMatch.away_score || 0) : (historicMatch.home_score || 0);
       }
     }
 
-    return opponentPoints;
+    return { points: opponentPoints, goalsFor: opponentGoalsFor, goalsAgainst: opponentGoalsAgainst };
   }
 
   private getPointsFromFixture(fixture: any, teamId: number): number {
