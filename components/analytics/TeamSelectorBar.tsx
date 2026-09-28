@@ -25,16 +25,20 @@ export const TeamSelectorBar: React.FC<TeamSelectorBarProps> = ({
       <div className="flex items-center space-x-3 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700 py-1">
         {teams.map((team) => {
           const isSelected = selectedTeamIds.includes(team.id);
+          const isDisabled = !isSelected && selectedTeamIds.length >= 4;
 
           return (
             <button
               key={team.id}
               onClick={() => onToggleTeam(team.id)}
+              disabled={isDisabled}
               title={`${team.name} ${team.isPromoted ? "(Promoted)" : ""}`}
               className={`relative flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 shrink-0 ${
                 isSelected
                   ? "bg-slate-800 ring-2 ring-emerald-500 scale-105 shadow-lg"
-                  : "opacity-40 hover:opacity-80 hover:bg-slate-800/40"
+                  : isDisabled 
+                    ? "opacity-20 cursor-not-allowed" 
+                    : "opacity-40 hover:opacity-80 hover:bg-slate-800/40"
               }`}
             >
               <div className="w-10 h-10 relative mb-1 flex items-center justify-center">

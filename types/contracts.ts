@@ -15,6 +15,10 @@ export const FixtureSyncSchema = z.object({
       home: z.number().nullable().optional(),
       away: z.number().nullable().optional(),
     }),
+    halfTime: z.object({
+      home: z.number().nullable().optional(),
+      away: z.number().nullable().optional(),
+    }).optional(),
   }),
 });
 

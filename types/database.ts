@@ -28,6 +28,11 @@ export interface FixtureRow {
   venue_status: string;
   status: 'SCHEDULED' | 'LIVE' | 'IN_PLAY' | 'PAUSED' | 'FINISHED' | 'POSTPONED' | 'CANCELLED';
   kickoff: string;
+  half_time_home_score: number | null;
+  half_time_away_score: number | null;
+  prior_home_score: number | null;
+  prior_away_score: number | null;
+  is_promoted_replacement: boolean;
   created_at: string;
 }
 

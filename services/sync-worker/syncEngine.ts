@@ -52,6 +52,8 @@ export class SyncEngine {
     console.log("Trajectory synchronization complete.");
   }
 
+
+
   private async syncFixtures(matches: any[], season: string) {
     const teamsMap = new Map<number, any>();
     matches.forEach((m) => {
@@ -91,6 +93,8 @@ export class SyncEngine {
       away_team_id: m.awayTeam.id,
       home_score: m.score?.fullTime?.home ?? null,
       away_score: m.score?.fullTime?.away ?? null,
+      half_time_home_score: m.score?.halfTime?.home ?? null,
+      half_time_away_score: m.score?.halfTime?.away ?? null,
       venue_status: "FINISHED",
       status: m.status,
       kickoff: m.utcDate,
