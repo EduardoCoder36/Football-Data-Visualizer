@@ -181,7 +181,7 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
   const unitSuffix = activeMetric === "PTS" ? "pts" : "goals";
 
   return (
-    <div className="w-full h-full flex flex-col p-4 bg-slate-950">
+    <div className="w-full flex flex-col p-4 bg-slate-950">
       <div className="mb-4">
         <MetricToggle selectedMetric={activeMetric} onChange={setActiveMetric} />
       </div>
@@ -220,7 +220,7 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
       </div>
 
       {/* Main Chart Canvas */}
-      <div className="w-full h-[650px] min-h-[500px]">
+      <div className="w-full h-[400px] sm:h-[500px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 15, right: 30, left: 10, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.7} />

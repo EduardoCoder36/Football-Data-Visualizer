@@ -105,7 +105,7 @@ export default function DashboardPage() {
         />
         
         {/* Fixture Results Table Section */}
-        <div className="w-full mt-6 pb-12 px-4 border-t border-slate-900 pt-6">
+        <div className="w-full mt-2 pb-12 px-4 border-t border-slate-900 pt-6">
           {selectedTeamIds.length === 1 ? (
             <FixtureResultsTable teamId={selectedTeamIds[0]} season={CURRENT_SEASON} />
           ) : (

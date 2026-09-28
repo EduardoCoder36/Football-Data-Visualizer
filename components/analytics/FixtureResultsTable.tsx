@@ -6,6 +6,15 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+interface HistoricalMatch {
+  matchday: number;
+  opponent_name: string;
+  opponent_crest: string;
+  is_home: boolean;
+  home_score: number | null;
+  away_score: number | null;
+}
+
 interface FixtureDetail {
   id: string;
   matchday: number;
@@ -21,21 +30,18 @@ interface FixtureDetail {
   paceMatch: HistoricalMatch | null;
   sameOpponentMatch: HistoricalMatch | null;
   is_promoted_replacement: boolean;
-}
-
-interface HistoricalMatch {
-  matchday: number;
-  opponent_name: string;
-  opponent_crest: string;
-  is_home: boolean;
-  home_score: number | null;
-  away_score: number | null;
+  currentPts?: number | null;
+  pacePts?: number | null;
+  eqPts?: number | null;
+  gwDelta?: number | null;
+  eqDelta?: number | null;
+  cumulativeGwDelta?: number | null;
+  cumulativeEqDelta?: number | null;
 }
 
 export const FixtureResultsTable: React.FC<{ teamId: number; season: string }> = ({ teamId, season }) => {
   const [fixtures, setFixtures] = useState<FixtureDetail[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -145,7 +151,62 @@ export const FixtureResultsTable: React.FC<{ teamId: number; season: string }> =
         };
       });
 
-      setFixtures(formatted);
+      // Calculate deltas
+      let cumulativeGw = 0;
+      let cumulativeEq = 0;
+
+      const getPts = (myScore: number | null, oppScore: number | null) => {
+        if (myScore === null || oppScore === null) return null;
+        if (myScore > oppScore) return 3;
+        if (myScore === oppScore) return 1;
+        return 0;
+      };
+
+      const enhancedFixtures = formatted.map(f => {
+        let currentPts: number | null = null;
+        if (f.status === 'FINISHED' && f.home_score !== null && f.away_score !== null) {
+          currentPts = getPts(f.is_home ? f.home_score : f.away_score, f.is_home ? f.away_score : f.home_score);
+        }
+
+        let pacePts: number | null = null;
+        if (f.paceMatch && f.paceMatch.home_score !== null && f.paceMatch.away_score !== null) {
+          pacePts = getPts(f.paceMatch.is_home ? f.paceMatch.home_score : f.paceMatch.away_score, f.paceMatch.is_home ? f.paceMatch.away_score : f.paceMatch.home_score);
+        }
+
+        let eqPts: number | null = null;
+        if (f.sameOpponentMatch && f.sameOpponentMatch.home_score !== null && f.sameOpponentMatch.away_score !== null) {
+          eqPts = getPts(f.sameOpponentMatch.is_home ? f.sameOpponentMatch.home_score : f.sameOpponentMatch.away_score, f.sameOpponentMatch.is_home ? f.sameOpponentMatch.away_score : f.sameOpponentMatch.home_score);
+        }
+
+        let gwDelta: number | null = null;
+        let cumulativeGwDelta: number | null = null;
+        if (currentPts !== null && pacePts !== null) {
+          gwDelta = currentPts - pacePts;
+          cumulativeGw += gwDelta;
+          cumulativeGwDelta = cumulativeGw;
+        }
+
+        let eqDelta: number | null = null;
+        let cumulativeEqDelta: number | null = null;
+        if (currentPts !== null && eqPts !== null) {
+          eqDelta = currentPts - eqPts;
+          cumulativeEq += eqDelta;
+          cumulativeEqDelta = cumulativeEq;
+        }
+
+        return {
+          ...f,
+          currentPts,
+          pacePts,
+          eqPts,
+          gwDelta,
+          eqDelta,
+          cumulativeGwDelta,
+          cumulativeEqDelta
+        };
+      });
+
+      setFixtures(enhancedFixtures);
       setLoading(false);
     };
 
@@ -157,145 +218,123 @@ export const FixtureResultsTable: React.FC<{ teamId: number; season: string }> =
     return <div className="p-8 text-center text-slate-400">Loading fixtures...</div>;
   }
 
+  const formatDelta = (delta: number | null | undefined) => {
+    if (delta === null || delta === undefined) return '-';
+    if (delta > 0) return `+${delta}`;
+    return delta.toString();
+  };
+
+  const getDeltaColor = (delta: number | null | undefined) => {
+    if (delta === null || delta === undefined) return 'text-slate-600';
+    if (delta > 0) return 'text-emerald-500';
+    if (delta < 0) return 'text-red-500';
+    return 'text-slate-400';
+  };
+
+  const renderResultBadge = (myScore: number | null, oppScore: number | null, status = 'FINISHED') => {
+    if (status === 'POSTPONED') return <span className="text-xs font-bold text-amber-500 w-4 text-center">P</span>;
+    if (myScore === null || oppScore === null) return <span className="text-xs font-bold text-slate-600 w-4 text-center">-</span>;
+    if (myScore > oppScore) return <span className="text-xs font-bold text-emerald-500 w-4 text-center">W</span>;
+    if (myScore < oppScore) return <span className="text-xs font-bold text-red-500 w-4 text-center">L</span>;
+    return <span className="text-xs font-bold text-slate-400 w-4 text-center">D</span>;
+  };
+
+  const renderMatchInfo = (name: string, crest: string, isHome: boolean, myScore: number | null, oppScore: number | null, status = 'FINISHED', textClass = 'text-slate-200') => {
+    const displayHomeScore = isHome ? myScore : oppScore;
+    const displayAwayScore = isHome ? oppScore : myScore;
+    
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <img src={crest} alt={name} className="w-5 h-5 object-contain" />
+          <span className={`text-sm font-medium ${textClass}`}>{name}</span>
+          <span className="text-[10px] text-slate-500 px-1 py-0.5 bg-slate-800 rounded">{isHome ? 'H' : 'A'}</span>
+        </div>
+        <div className="flex items-center gap-2 pl-7">
+          <span className={`text-xs font-mono font-bold ${textClass}`}>
+            {status === 'FINISHED' && displayHomeScore !== null ? `${displayHomeScore} - ${displayAwayScore}` : (status === 'POSTPONED' ? 'P - P' : '-')}
+          </span>
+          {renderResultBadge(myScore, oppScore, status)}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="w-full mx-auto flex flex-col bg-slate-950 text-slate-200">
       <div className="overflow-y-auto max-h-[600px] scrollbar-thin scrollbar-thumb-slate-700 rounded-lg border border-slate-800">
         <table className="w-full text-left border-collapse relative">
           <thead className="sticky top-0 bg-slate-900 border-b border-slate-800 z-10 shadow-sm">
             <tr>
-              <th className="px-4 py-3 text-sm font-semibold text-slate-400">GW</th>
-              <th className="px-4 py-3 text-sm font-semibold text-slate-400">Date</th>
-              <th className="px-4 py-3 text-sm font-semibold text-slate-400">Opponent</th>
-              <th className="px-4 py-3 text-sm font-semibold text-slate-400">Score</th>
-              <th className="px-4 py-3 text-sm font-semibold text-slate-400 text-center">Result</th>
-              <th className="px-4 py-3 w-10"></th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-400">GW</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-400">Current Match</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-400">Last Season (GW)</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-400">Equivalent Fixture</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-400">Match Pts Δ</th>
+              <th className="px-4 py-3 text-xs font-semibold text-slate-400">Cumul. Pts Δ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {fixtures.map((f) => {
-              const isExpanded = expandedId === f.id;
-              let resultLabel = "-";
-              let resultColor = "text-slate-500";
+              const myScore = f.is_home ? f.home_score : f.away_score;
+              const oppScore = f.is_home ? f.away_score : f.home_score;
               
-              if (f.status === "FINISHED" && f.home_score !== null && f.away_score !== null) {
-                const myScore = f.is_home ? f.home_score : f.away_score;
-                const oppScore = f.is_home ? f.away_score : f.home_score;
-                if (myScore > oppScore) { resultLabel = "W"; resultColor = "text-emerald-500"; }
-                else if (myScore < oppScore) { resultLabel = "L"; resultColor = "text-red-500"; }
-                else { resultLabel = "D"; resultColor = "text-slate-400"; }
-              } else if (f.status === "POSTPONED") {
-                resultLabel = "P";
-                resultColor = "text-amber-500";
-              }
+              const pMyScore = f.paceMatch ? (f.paceMatch.is_home ? f.paceMatch.home_score : f.paceMatch.away_score) : null;
+              const pOppScore = f.paceMatch ? (f.paceMatch.is_home ? f.paceMatch.away_score : f.paceMatch.home_score) : null;
+
+              const eqMyScore = f.sameOpponentMatch ? (f.sameOpponentMatch.is_home ? f.sameOpponentMatch.home_score : f.sameOpponentMatch.away_score) : null;
+              const eqOppScore = f.sameOpponentMatch ? (f.sameOpponentMatch.is_home ? f.sameOpponentMatch.away_score : f.sameOpponentMatch.home_score) : null;
 
               return (
-                <React.Fragment key={f.id}>
-                  <tr 
-                    className={`group hover:bg-slate-900/50 transition-colors cursor-pointer ${isExpanded ? 'bg-slate-900/30' : ''}`}
-                    onClick={() => setExpandedId(isExpanded ? null : f.id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isExpanded ? null : f.id); } }}
-                    tabIndex={0}
-                    aria-expanded={isExpanded}
-                  >
-                    <td className="px-4 py-3 text-sm font-medium text-slate-300">{f.matchday}</td>
-                    <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">
-                      {new Date(f.kickoff).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <img src={f.opponent_crest} alt={f.opponent_name} className="w-6 h-6 object-contain" />
-                        <span className="text-sm font-medium">{f.opponent_name}</span>
-                        <span className="text-xs text-slate-500 px-1.5 py-0.5 bg-slate-800 rounded">{f.is_home ? 'H' : 'A'}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold tracking-wider">
-                      {f.status === 'FINISHED' ? `${f.home_score} - ${f.away_score}` : (f.status === 'POSTPONED' ? 'P - P' : '-')}
-                    </td>
-                    <td className={`px-4 py-3 text-center font-bold ${resultColor}`}>
-                      {resultLabel}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-center">
-                      <svg className={`w-5 h-5 transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </td>
-                  </tr>
+                <tr key={f.id} className="hover:bg-slate-900/50 transition-colors">
+                  <td className="px-4 py-3 text-sm font-medium text-slate-300 align-top pt-4">{f.matchday}</td>
                   
-                  {isExpanded && (
-                    <tr>
-                      <td colSpan={6} className="p-0 border-b border-slate-800 bg-slate-900/60 shadow-inner text-sm animate-in slide-in-from-top-2 fade-in duration-200">
-                        <div className="p-6">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            
-                            {/* Card 1: Current Season */}
-                            <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 space-y-3">
-                              <h4 className="text-slate-400 font-semibold tracking-wider text-[10px] uppercase border-b border-slate-800/80 pb-2 mb-2">Current Season</h4>
-                              {f.status === "POSTPONED" ? (
-                                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                                  <span className="font-semibold text-xs">Postponed / Rescheduled</span>
-                                </div>
-                              ) : f.status === "FINISHED" ? (
-                                <div className="space-y-2 text-slate-300 text-xs">
-                                  <div className="flex justify-between items-center bg-slate-900/50 px-2 py-1.5 rounded">
-                                    <span className="text-slate-500">Half-Time</span>
-                                    <span className="font-mono">({f.half_time_home_score ?? '-'} - {f.half_time_away_score ?? '-'})</span>
-                                  </div>
-                                  <div className="flex justify-between items-center bg-slate-900/50 px-2 py-1.5 rounded">
-                                    <span className="text-slate-500">Full-Time</span>
-                                    <span className="font-mono font-bold text-slate-200">{f.home_score} - {f.away_score}</span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="text-slate-500 italic text-xs">Match not yet played</div>
-                              )}
-                            </div>
-
-                            {/* Card 2: Last Year's Pace */}
-                            <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 space-y-3 relative">
-                              <h4 className="text-slate-400 font-semibold tracking-wider text-[10px] uppercase border-b border-slate-800/80 pb-2 mb-2">Last Year's Pace (GW {f.matchday})</h4>
-                              {f.paceMatch ? (
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <img src={f.paceMatch.opponent_crest} alt={f.paceMatch.opponent_name} className="w-5 h-5 object-contain" />
-                                    <span className="text-xs font-medium text-slate-300">{f.paceMatch.opponent_name}</span>
-                                    <span className="text-[10px] text-slate-500 px-1 py-0.5 bg-slate-800 rounded">{f.paceMatch.is_home ? 'H' : 'A'}</span>
-                                  </div>
-                                  <div className="font-mono font-bold text-slate-400 text-sm">{f.paceMatch.home_score}-{f.paceMatch.away_score}</div>
-                                </div>
-                              ) : (
-                                <div className="text-slate-500 italic text-xs">No match found</div>
-                              )}
-                            </div>
-
-                            {/* Card 3: Same Opponent Equivalent */}
-                            <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 space-y-3 relative">
-                              <h4 className="text-slate-400 font-semibold tracking-wider text-[10px] uppercase border-b border-slate-800/80 pb-2 mb-2 flex items-center justify-between">
-                                <span>Same Opponent</span>
-                                {f.is_promoted_replacement && (
-                                  <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded uppercase">Replaced</span>
-                                )}
-                              </h4>
-                              
-                              {f.sameOpponentMatch ? (
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <img src={f.sameOpponentMatch.opponent_crest} alt={f.sameOpponentMatch.opponent_name} className="w-5 h-5 object-contain" />
-                                    <span className="text-xs font-medium text-slate-300">{f.sameOpponentMatch.opponent_name}</span>
-                                    <span className="text-[10px] text-slate-500 px-1 py-0.5 bg-slate-800 rounded">{f.sameOpponentMatch.is_home ? 'H' : 'A'}</span>
-                                  </div>
-                                  <div className="font-mono font-bold text-slate-400 text-sm">{f.sameOpponentMatch.home_score}-{f.sameOpponentMatch.away_score}</div>
-                                </div>
-                              ) : (
-                                <div className="text-slate-500 italic text-xs">No historical equivalent</div>
-                              )}
-                            </div>
-
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                  <td className="px-4 py-3 align-top pt-3">
+                    {renderMatchInfo(f.opponent_name, f.opponent_crest, f.is_home, myScore, oppScore, f.status, 'text-slate-200')}
+                  </td>
+                  
+                  <td className="px-4 py-3 align-top pt-3">
+                    {f.paceMatch ? (
+                      renderMatchInfo(f.paceMatch.opponent_name, f.paceMatch.opponent_crest, f.paceMatch.is_home, pMyScore, pOppScore, 'FINISHED', 'text-slate-400')
+                    ) : (
+                      <span className="text-xs text-slate-600 italic">No match</span>
+                    )}
+                  </td>
+                  
+                  <td className="px-4 py-3 align-top pt-3">
+                    {f.sameOpponentMatch ? (
+                      renderMatchInfo(f.sameOpponentMatch.opponent_name, f.sameOpponentMatch.opponent_crest, f.sameOpponentMatch.is_home, eqMyScore, eqOppScore, 'FINISHED', 'text-zinc-400')
+                    ) : (
+                      <span className="text-xs text-slate-600 italic">No equivalent</span>
+                    )}
+                  </td>
+                  
+                  <td className="px-4 py-3 font-mono tabular-nums text-sm align-top pt-4">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 w-4 font-sans uppercase">GW</span>
+                        <span className={`${getDeltaColor(f.gwDelta)} font-bold`}>{formatDelta(f.gwDelta)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 w-4 font-sans uppercase">Eq</span>
+                        <span className={`${getDeltaColor(f.eqDelta)} font-bold`}>{formatDelta(f.eqDelta)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  
+                  <td className="px-4 py-3 font-mono tabular-nums text-sm align-top pt-4">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 w-4 font-sans uppercase">GW</span>
+                        <span className={`${getDeltaColor(f.cumulativeGwDelta)} font-bold`}>{formatDelta(f.cumulativeGwDelta)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 w-4 font-sans uppercase">Eq</span>
+                        <span className={`${getDeltaColor(f.cumulativeEqDelta)} font-bold`}>{formatDelta(f.cumulativeEqDelta)}</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
               );
             })}
           </tbody>
