@@ -1,127 +1,211 @@
-import React, { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
-import TeamSelectorBar, { TeamOption } from "../components/analytics/TeamSelectorBar";
-import TrajectoryChart, { TrajectoryDataRow } from "../components/analytics/TrajectoryChart";
-import FixtureResultsTable from "../components/analytics/FixtureResultsTable";
+import React from 'react';
+import Link from 'next/link';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-const ARSENAL_ID = 57;
-const CURRENT_SEASON = "2026/2027";
-
-export default function DashboardPage() {
-  const [teams, setTeams] = useState<TeamOption[]>([]);
-  const [trajectories, setTrajectories] = useState<TrajectoryDataRow[]>([]);
-  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([ARSENAL_ID]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-
-      // 1. Identify active clubs in the current campaign
-      const { data: activeFixtures } = await supabase
-        .from("fixtures")
-        .select("home_team_id")
-        .eq("season", CURRENT_SEASON);
-
-      const activeTeamIds = new Set((activeFixtures || []).map((f) => f.home_team_id));
-
-      // 2. Fetch all teams
-      const { data: teamRows } = await supabase
-        .from("teams")
-        .select("id, name, short_name, tla, crest_url, is_promoted")
-        .order("name", { ascending: true });
-
-      // 3. Fetch trajectories
-      const { data: trajectoryRows } = await supabase
-        .from("team_trajectories")
-        .select("team_id, games_played, is_completed, cumulative_points, cumulative_goals_for, cumulative_goals_against, baseline_points, baseline_goals_for, baseline_goals_against, same_opponent_points, same_opponent_goals_for, same_opponent_goals_against")
-        .order("games_played", { ascending: true });
-
-      if (teamRows) {
-        // Filter out any historic or relegated clubs not active in the current season
-        const activeClubs = teamRows.filter((t) =>
-          activeTeamIds.size > 0 ? activeTeamIds.has(t.id) : true
-        );
-
-        setTeams(
-          activeClubs.map((t) => ({
-            id: t.id,
-            name: t.name,
-            shortName: t.short_name,
-            tla: t.tla,
-            crestUrl: t.crest_url,
-            isPromoted: t.is_promoted,
-          }))
-        );
-      }
-
-      if (trajectoryRows) {
-        setTrajectories(trajectoryRows);
-      }
-
-      setLoading(false);
-    }
-
-    loadData();
-  }, []);
-
-  const handleToggleTeam = (teamId: number) => {
-    setSelectedTeamIds((prev) => {
-      if (prev.includes(teamId)) {
-        if (prev.length === 1) return prev;
-        return prev.filter((id) => id !== teamId);
-      } else {
-        if (prev.length >= 4) return prev;
-        return [...prev, teamId];
-      }
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center bg-slate-950 text-slate-400">
-        Loading Premier League Trajectories...
-      </div>
-    );
-  }
-
+export default function HomePage() {
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden">
-      <TeamSelectorBar
-        teams={teams}
-        selectedTeamIds={selectedTeamIds}
-        onToggleTeam={handleToggleTeam}
-      />
-      <div className="flex-1 w-full overflow-y-auto">
-        <TrajectoryChart
-          teams={teams}
-          selectedTeamIds={selectedTeamIds}
-          trajectories={trajectories}
-        />
-        
-        {/* Fixture Results Table Section */}
-        <div className="w-full mt-2 pb-12 px-4 border-t border-slate-900 pt-6">
-          {selectedTeamIds.length === 1 ? (
-            <FixtureResultsTable teamId={selectedTeamIds[0]} season={CURRENT_SEASON} />
-          ) : (
-            <div className="w-full max-w-3xl mx-auto bg-slate-900/50 border border-slate-800 rounded-xl p-8 text-center shadow-sm">
-              <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 selection:bg-emerald-500 selection:text-neutral-950">
+      {/* Background Ambient Glow */}
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(16,185,129,0.15),rgba(255,255,255,0))]" />
+
+      {/* Main Container */}
+      <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+        {/* Top Status Bar */}
+        <div className="mb-12 flex items-center justify-between border-b border-neutral-900 pb-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            <span className="font-semibold tracking-wider uppercase text-neutral-300">
+              2026/2027 Season Active
+            </span>
+          </div>
+          <div className="text-neutral-500 font-mono text-[11px]">
+            Engine v2.4 • Softmax Calibrated
+          </div>
+        </div>
+
+        {/* Hero Section */}
+        <section className="mb-16 text-center lg:text-left">
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-xs font-semibold text-emerald-400 mb-6 backdrop-blur-md">
+            <span>⚽</span>
+            <span>ADVANCED FOOTBALL INTELLIGENCE</span>
+          </div>
+
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl max-w-4xl leading-[1.1]">
+            Premier League Tactical Analytics & Simulation Engine
+          </h1>
+
+          <p className="mt-5 max-w-3xl text-base sm:text-lg text-neutral-400 leading-relaxed">
+            18-month recency-decay models, tactical archetype clashes, and calibrated multinomial Softmax probability forecasting.
+          </p>
+        </section>
+
+        {/* Two Main Portal Feature Cards */}
+        <section className="mb-20 grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+          {/* Card A: Team Trajectory & Metric Visualizer */}
+          <div className="group relative flex flex-col justify-between rounded-2xl border border-neutral-800 bg-neutral-900/50 p-6 sm:p-8 backdrop-blur-md transition-all duration-300 hover:border-emerald-500/50 hover:bg-neutral-900/80 hover:shadow-xl hover:shadow-emerald-950/20">
+            <div>
+              {/* Badge & Icon */}
+              <div className="flex items-center justify-between mb-6">
+                <span className="inline-flex items-center rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold text-emerald-400">
+                  Interactive Charts
+                </span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-800 text-neutral-300 group-hover:bg-emerald-500/20 group-hover:text-emerald-400 transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                  </svg>
+                </div>
               </div>
-              <h3 className="text-lg font-medium text-slate-200 mb-2">Select a single team</h3>
-              <p className="text-slate-400 text-sm max-w-md mx-auto">
-                Select exactly one team in the top bar to view match-by-match results, score breakdowns, and prior-season equivalents.
+
+              {/* Title & Description */}
+              <h2 className="text-2xl font-bold text-white tracking-tight group-hover:text-emerald-300 transition-colors">
+                Team Trajectory & Metric Visualizer
+              </h2>
+              <p className="mt-3 text-sm sm:text-base text-neutral-400 leading-relaxed">
+                Interactive historical and rolling trajectory plots tracking team form, goal baselines, and performance swings.
+              </p>
+
+              {/* Feature Highlights */}
+              <ul className="mt-6 space-y-2.5 text-xs text-neutral-400">
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span>38-match pace comparisons vs prior season equivalents</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span>Goal baselines, scoring efficiency & defensive swings</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span>Multi-club overlay supporting up to 4 concurrent teams</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Action Link Button */}
+            <div className="mt-8 pt-6 border-t border-neutral-800/80">
+              <Link
+                href="/visualizer"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-800 px-5 py-3 text-sm font-bold text-white transition-all group-hover:bg-emerald-500 group-hover:text-neutral-950 group-hover:shadow-lg group-hover:shadow-emerald-500/25"
+              >
+                <span>Launch Trajectory Visualizer</span>
+                <span className="transition-transform group-hover:translate-x-1">→</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Card B: Matchday Predictions Engine */}
+          <div className="group relative flex flex-col justify-between rounded-2xl border border-neutral-800 bg-neutral-900/50 p-6 sm:p-8 backdrop-blur-md transition-all duration-300 hover:border-sky-500/50 hover:bg-neutral-900/80 hover:shadow-xl hover:shadow-sky-950/20">
+            <div>
+              {/* Badge & Icon */}
+              <div className="flex items-center justify-between mb-6">
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/15 border border-sky-500/30 px-2.5 py-1 text-xs font-bold text-sky-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-pulse" />
+                  Live Probabilities
+                </span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-800 text-neutral-300 group-hover:bg-sky-500/20 group-hover:text-sky-400 transition-colors">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Title & Description */}
+              <h2 className="text-2xl font-bold text-white tracking-tight group-hover:text-sky-300 transition-colors">
+                Matchday Predictions Engine
+              </h2>
+              <p className="mt-3 text-sm sm:text-base text-neutral-400 leading-relaxed">
+                Gameweek-by-gameweek fixture forecasts with Rock-Paper-Scissors tactical archetype clash modifiers, live probabilities, and historical model accuracy.
+              </p>
+
+              {/* Feature Highlights */}
+              <ul className="mt-6 space-y-2.5 text-xs text-neutral-400">
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>Softmax multinomial probabilities (Home, Draw, Away)</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>Control vs Direct vs Transition clash modifiers</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>Interactive Gameweek navigation with round-by-round accuracy tracking</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Action Link Button */}
+            <div className="mt-8 pt-6 border-t border-neutral-800/80">
+              <Link
+                href="/predictions"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-800 px-5 py-3 text-sm font-bold text-white transition-all group-hover:bg-sky-500 group-hover:text-neutral-950 group-hover:shadow-lg group-hover:shadow-sky-500/25"
+              >
+                <span>Explore Matchday Predictions</span>
+                <span className="transition-transform group-hover:translate-x-1">→</span>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* Methodology & Architecture Teaser (Bottom Section) */}
+        <section className="rounded-2xl border border-neutral-800/80 bg-neutral-900/30 p-8 sm:p-10 backdrop-blur-sm">
+          <div className="mb-8 text-center sm:text-left">
+            <h3 className="text-xl font-bold text-white tracking-tight sm:text-2xl">
+              Engine Architecture & Methodology
+            </h3>
+            <p className="mt-1 text-sm text-neutral-400">
+              A systematic quantitative framework designed to avoid both recency bias and historical inertia.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            {/* Pillar 1 */}
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 font-mono text-xs font-bold mb-3">
+                01
+              </div>
+              <h4 className="text-base font-bold text-white mb-2">
+                18-Month Rolling Decay
+              </h4>
+              <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+                Half-life exponential weighting prioritizing current form without losing long-term baselines. Matches are weighted with a 120-day half-life to balance immediate momentum with tactical pedigree.
               </p>
             </div>
-          )}
-        </div>
+
+            {/* Pillar 2 */}
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400 font-mono text-xs font-bold mb-3">
+                02
+              </div>
+              <h4 className="text-base font-bold text-white mb-2">
+                Tactical Clash Archetypes
+              </h4>
+              <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+                Control, Transition, and Direct systems mapped with Rock-Paper-Scissors multipliers. Team profiles account for stylistic mismatches where playstyle matchups shift expected outcomes by up to 10 points.
+              </p>
+            </div>
+
+            {/* Pillar 3 */}
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-400 font-mono text-xs font-bold mb-3">
+                03
+              </div>
+              <h4 className="text-base font-bold text-white mb-2">
+                Calibrated Softmax
+              </h4>
+              <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+                Regressed draw bands and scaled margins preventing extreme overconfidence. Logit outputs incorporate home-field advantages, draw decay parameters, and non-linear sensitivity scaling.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="mt-16 border-t border-neutral-900 pt-8 text-center text-xs text-neutral-500">
+          <p>Premier League Tactical Analytics & Simulation Engine • Built with Next.js & Supabase</p>
+        </footer>
       </div>
     </div>
   );

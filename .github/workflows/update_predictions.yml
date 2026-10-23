@@ -1,0 +1,37 @@
+name: Sync Matchday Predictions & Results
+
+on:
+  schedule:
+    # 1. Monday at 06:00 UTC: capture weekend results and update model accuracy
+    - cron: '0 6 * * 1'
+    # 2. Thursday at 14:00 UTC: pull fresh schedule and recalculate upcoming weekend probabilities
+    - cron: '0 14 * * 4'
+  workflow_dispatch:
+
+jobs:
+  sync-predictions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Prediction & Result Sync Script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: python scripts/sync_upcoming_predictions.py
