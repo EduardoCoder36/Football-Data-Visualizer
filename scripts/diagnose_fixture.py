@@ -309,22 +309,25 @@ probs = exp_logits / np.sum(exp_logits)
 
 def apply_excess_tapering(p_home: float, p_draw: float, p_away: float, threshold: float = 0.75):
     probs_list = [p_home, p_draw, p_away]
-    max_idx = probs_list.index(max(probs_list))
-    max_val = probs_list[max_idx]
     
-    if max_val > threshold:
-        excess = max_val - threshold
-        min_idx = probs_list.index(min(probs_list))
-        draw_idx = 3 - max_idx - min_idx
+    # 0 = Home, 1 = Draw, 2 = Away
+    if probs_list[0] > threshold:
+        fav_idx, dog_idx = 0, 2
+    elif probs_list[2] > threshold:
+        fav_idx, dog_idx = 2, 0
+    else:
+        return probs_list[0], probs_list[1], probs_list[2]
         
-        probs_list[max_idx] = threshold + (excess * 0.50)
-        probs_list[draw_idx] += (excess * 0.35)
-        probs_list[min_idx] += (excess * 0.15)
-        
-        total = sum(probs_list)
-        probs_list = [p / total for p in probs_list]
-        
-    return probs_list[0], probs_list[1], probs_list[2]
+    draw_idx = 1
+    excess = probs_list[fav_idx] - threshold
+    
+    # 40% retained by favorite, 50% to draw, 10% to underdog
+    probs_list[fav_idx] = threshold + (excess * 0.40)
+    probs_list[draw_idx] += (excess * 0.50)
+    probs_list[dog_idx] += (excess * 0.10)
+    
+    total = sum(probs_list)
+    return probs_list[0] / total, probs_list[1] / total, probs_list[2] / total
 
 prob_h, prob_d, prob_a = float(probs[0]), float(probs[1]), float(probs[2])
 prob_h, prob_d, prob_a = apply_excess_tapering(prob_h, prob_d, prob_a, threshold=0.75)

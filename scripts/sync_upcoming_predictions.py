@@ -141,22 +141,25 @@ CLASH_ADVANTAGE = {
 
 def apply_excess_tapering(p_home: float, p_draw: float, p_away: float, threshold: float = 0.75):
     probs = [p_home, p_draw, p_away]
-    max_idx = probs.index(max(probs))
-    max_val = probs[max_idx]
     
-    if max_val > threshold:
-        excess = max_val - threshold
-        min_idx = probs.index(min(probs))
-        draw_idx = 3 - max_idx - min_idx
+    # 0 = Home, 1 = Draw, 2 = Away
+    if probs[0] > threshold:
+        fav_idx, dog_idx = 0, 2
+    elif probs[2] > threshold:
+        fav_idx, dog_idx = 2, 0
+    else:
+        return probs[0], probs[1], probs[2]
         
-        probs[max_idx] = threshold + (excess * 0.50)
-        probs[draw_idx] += (excess * 0.35)
-        probs[min_idx] += (excess * 0.15)
-        
-        total = sum(probs)
-        probs = [p / total for p in probs]
-        
-    return probs[0], probs[1], probs[2]
+    draw_idx = 1
+    excess = probs[fav_idx] - threshold
+    
+    # 40% retained by favorite, 50% to draw, 10% to underdog
+    probs[fav_idx] = threshold + (excess * 0.40)
+    probs[draw_idx] += (excess * 0.50)
+    probs[dog_idx] += (excess * 0.10)
+    
+    total = sum(probs)
+    return probs[0] / total, probs[1] / total, probs[2] / total
 
 def calculate_probabilities(delta: float):
     """Calibrated Softmax probability engine (c = 0.20, k = 0.075, beta = 0.065)."""
