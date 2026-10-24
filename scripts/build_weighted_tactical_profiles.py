@@ -41,10 +41,10 @@ df_misc = fbref.read_team_season_stats(stat_type="misc").reset_index()
 df_std.columns = ['_'.join(str(c) for c in col).strip('_') if isinstance(col, tuple) else str(col) for col in df_std.columns]
 df_misc.columns = ['_'.join(str(c) for c in col).strip('_') if isinstance(col, tuple) else str(col) for col in df_misc.columns]
 
-# Calculate recency weights (Half-life = 120 days)
+# Calculate recency weights (Half-life = 180 days)
 now = pd.Timestamp.now()
 days_ago = (now - match_logs['date']).dt.total_seconds() / (24 * 3600)
-HALF_LIFE = 120.0
+HALF_LIFE = 180.0
 match_logs['weight'] = 0.5 ** (days_ago / HALF_LIFE)
 
 # Weighted goals per team
@@ -85,9 +85,36 @@ def pick_archetype(row):
 merged['archetype'] = merged.apply(pick_archetype, axis=1)
 
 # Base rating weighted by recency goals
-base_rating = 45 + (normalize(merged['weighted_gls_p90']) * 0.45)
+unconstrained_base_rating = 45 + (normalize(merged['weighted_gls_p90']) * 0.45)
 merged['chaos_index'] = normalize(merged['Fouls_p90'])
 spread = 7 + (merged['chaos_index'] / 100.0 * 8)
+
+# Velocity Limiter (Option B): clamp to anchor baseline ± (1.25 * active_gameweeks_completed)
+anchor_csv_path = "scripts/tactical_profiles_2025_2026.csv"
+if os.path.exists(anchor_csv_path):
+    anchor_df = pd.read_csv(anchor_csv_path).set_index("team")
+    anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
+else:
+    anchor_ratings = {}
+
+# Active completed matches in 2026-2027
+s26_logs = match_logs[match_logs['date'] >= '2026-08-01']
+games_per_team = s26_logs.groupby('team')['game_id'].nunique().to_dict()
+
+clamped_ratings = []
+for idx, row in merged.iterrows():
+    tm = row['team']
+    r_uncon = unconstrained_base_rating.iloc[idx]
+    gw_comp = games_per_team.get(tm, 0)
+    if tm in anchor_ratings:
+        anchor_base = anchor_ratings[tm]
+        max_allowed_delta = 1.25 * gw_comp
+        r_clamped = max(anchor_base - max_allowed_delta, min(anchor_base + max_allowed_delta, r_uncon))
+    else:
+        r_clamped = r_uncon
+    clamped_ratings.append(r_clamped)
+
+base_rating = pd.Series(clamped_ratings)
 
 merged['floor'] = (base_rating - spread).round(1)
 merged['ceiling'] = (base_rating + spread).round(1)
@@ -95,7 +122,7 @@ merged['ceiling'] = (base_rating + spread).round(1)
 final_cols = ['team', 'archetype', 'floor', 'ceiling', 'chaos_index', 'total_games', 'score_control', 'score_transition', 'score_direct']
 final_df = merged[final_cols].sort_values(by='ceiling', ascending=False)
 
-print("\n=== 18-Month Recency-Weighted Tactical Profiles ===")
+print("\n=== 18-Month Recency-Weighted Tactical Profiles (180d Half-Life + Velocity Limiter) ===")
 print(final_df.to_string(index=False))
 
 # Export clean CSV

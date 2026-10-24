@@ -31,6 +31,17 @@ if not os.path.exists(profile_csv_path):
 profiles_df = pd.read_csv(profile_csv_path)
 profiles = profiles_df.set_index("team").to_dict(orient="index")
 
+# Load 2025-2026 anchor baselines for velocity limiter
+anchor_csv_path = os.path.join(script_dir, "tactical_profiles_2025_2026.csv")
+if not os.path.exists(anchor_csv_path):
+    anchor_csv_path = "scripts/tactical_profiles_2025_2026.csv"
+
+if os.path.exists(anchor_csv_path):
+    anchor_df = pd.read_csv(anchor_csv_path).set_index("team")
+    anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
+else:
+    anchor_ratings = {}
+
 # Standard team aliases for Premier League clubs
 TEAM_ALIASES = {
     "Manchester United": "Manchester Utd",
@@ -120,12 +131,12 @@ def parse_score(raw_score):
 
 # 3. Tactical clash modifiers
 CLASH_ADVANTAGE = {
-    ("Control", "Direct"): 10.0,
-    ("Direct", "Transition"): 10.0,
-    ("Transition", "Control"): 10.0,
-    ("Direct", "Control"): -10.0,
-    ("Transition", "Direct"): -10.0,
-    ("Control", "Transition"): -10.0,
+    ("Control", "Direct"): 4.5,
+    ("Direct", "Transition"): 4.5,
+    ("Transition", "Control"): 4.5,
+    ("Direct", "Control"): -4.5,
+    ("Transition", "Direct"): -4.5,
+    ("Control", "Transition"): -4.5,
 }
 
 def calculate_probabilities(delta: float):
@@ -195,8 +206,25 @@ def build_prediction_records(df: pd.DataFrame, is_completed: bool):
             
         h_p = profiles[h_team]
         a_p = profiles[a_team]
-        h_rating = (h_p['floor'] + h_p['ceiling']) / 2.0
-        a_rating = (a_p['floor'] + a_p['ceiling']) / 2.0
+        h_uncon = (h_p['floor'] + h_p['ceiling']) / 2.0
+        a_uncon = (a_p['floor'] + a_p['ceiling']) / 2.0
+        
+        # Velocity Limiter (Option B): clamp to anchor baseline ± (1.25 * active_gameweeks_completed)
+        gw_int = int(row['gameweek']) if str(row.get('gameweek', '')).isdigit() else 1
+        active_gw_completed = max(0, gw_int - 1) if not is_completed else max(0, gw_int - 1)
+        max_allowed_delta = 1.25 * active_gw_completed
+        
+        if h_team in anchor_ratings:
+            h_anchor = anchor_ratings[h_team]
+            h_rating = max(h_anchor - max_allowed_delta, min(h_anchor + max_allowed_delta, h_uncon))
+        else:
+            h_rating = h_uncon
+            
+        if a_team in anchor_ratings:
+            a_anchor = anchor_ratings[a_team]
+            a_rating = max(a_anchor - max_allowed_delta, min(a_anchor + max_allowed_delta, a_uncon))
+        else:
+            a_rating = a_uncon
         
         clash_key = (h_p['archetype'], a_p['archetype'])
         clash = CLASH_ADVANTAGE.get(clash_key, 0.0)
