@@ -3,9 +3,12 @@ import pandas as pd
 import numpy as np
 import re
 
-# 1. Load rolling 18-month tactical profiles
+# 1. Load rolling 18-month tactical profiles and 2025-2026 anchor profiles
 profiles_df = pd.read_csv("scripts/tactical_profiles_rolling_18m.csv")
 profiles = profiles_df.set_index("team").to_dict(orient="index")
+
+anchor_df = pd.read_csv("scripts/tactical_profiles_2025_2026.csv").set_index("team")
+anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
 
 # 2. Fetch current 2026-2027 completed matches
 print("Fetching 2026-2027 match results...")
@@ -17,12 +20,12 @@ played = schedule.dropna(subset=['score']).copy()
 
 # Tactical Clash Rules
 CLASH_ADVANTAGE = {
-    ("Control", "Direct"): 10.0,
-    ("Direct", "Transition"): 10.0,
-    ("Transition", "Control"): 10.0,
-    ("Direct", "Control"): -10.0,
-    ("Transition", "Direct"): -10.0,
-    ("Control", "Transition"): -10.0,
+    ("Control", "Direct"): 4.5,
+    ("Direct", "Transition"): 4.5,
+    ("Transition", "Control"): 4.5,
+    ("Direct", "Control"): -4.5,
+    ("Transition", "Direct"): -4.5,
+    ("Control", "Transition"): -4.5,
 }
 
 def calculate_probabilities(delta: float):
@@ -40,13 +43,29 @@ def calculate_probabilities(delta: float):
     
     return round(probs[0] * 100, 1), round(probs[1] * 100, 1), round(probs[2] * 100, 1)
 
-def simulate(home, away):
+def simulate(home, away, gameweek: int = 1):
     if home not in profiles or away not in profiles:
         return None
     
     h_p, a_p = profiles[home], profiles[away]
-    h_rating = (h_p['floor'] + h_p['ceiling']) / 2.0
-    a_rating = (a_p['floor'] + a_p['ceiling']) / 2.0
+    h_uncon = (h_p['floor'] + h_p['ceiling']) / 2.0
+    a_uncon = (a_p['floor'] + a_p['ceiling']) / 2.0
+    
+    # Velocity Limiter (Option B)
+    active_gw_completed = max(0, gameweek - 1)
+    max_allowed_delta = 1.25 * active_gw_completed
+    
+    if home in anchor_ratings:
+        h_anchor = anchor_ratings[home]
+        h_rating = max(h_anchor - max_allowed_delta, min(h_anchor + max_allowed_delta, h_uncon))
+    else:
+        h_rating = h_uncon
+        
+    if away in anchor_ratings:
+        a_anchor = anchor_ratings[away]
+        a_rating = max(a_anchor - max_allowed_delta, min(a_anchor + max_allowed_delta, a_uncon))
+    else:
+        a_rating = a_uncon
     
     clash = CLASH_ADVANTAGE.get((h_p['archetype'], a_p['archetype']), 0.0)
     
@@ -76,7 +95,17 @@ for _, row in played.iterrows():
     
     h_s, a_s = int(score_match.group(1)), int(score_match.group(2))
     
-    sim = simulate(h_team, a_team)
+    gw = 1
+    if 'round' in row and pd.notna(row['round']):
+        m = re.search(r'(\d+)', str(row['round']))
+        if m:
+            gw = int(m.group(1))
+    elif 'week' in row and pd.notna(row['week']):
+        m = re.search(r'(\d+)', str(row['week']))
+        if m:
+            gw = int(m.group(1))
+            
+    sim = simulate(h_team, a_team, gameweek=gw)
     if not sim:
         skipped.append((f"{h_team} vs {a_team}", "Team not in profiles"))
         continue
