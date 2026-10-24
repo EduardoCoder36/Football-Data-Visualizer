@@ -245,14 +245,26 @@ gw_number = int(prediction['gameweek']) # 5
 active_gw_completed = gw_number - 1 # 4 completed gameweeks before GW5 kickoff
 max_allowed_delta = 1.25 * active_gw_completed # 1.25 * 4 = 5.00 points
 
-h_anchor_base = anchor_ratings.get('Brighton', 68.45)
-a_anchor_base = anchor_ratings.get('Arsenal', 83.40)
+PROMOTED_DEFAULT_ANCHOR = 56.0
+
+if 'Brighton' in anchor_ratings:
+    h_anchor_base = anchor_ratings['Brighton']
+else:
+    h_anchor_base = PROMOTED_DEFAULT_ANCHOR
+    h_uncon_rating = PROMOTED_DEFAULT_ANCHOR + (h_uncon_rating - PROMOTED_DEFAULT_ANCHOR) * 0.45
 
 h_base_rating = max(h_anchor_base - max_allowed_delta, min(h_anchor_base + max_allowed_delta, h_uncon_rating))
+
+if 'Arsenal' in anchor_ratings:
+    a_anchor_base = anchor_ratings['Arsenal']
+else:
+    a_anchor_base = PROMOTED_DEFAULT_ANCHOR
+    a_uncon_rating = PROMOTED_DEFAULT_ANCHOR + (a_uncon_rating - PROMOTED_DEFAULT_ANCHOR) * 0.45
+
 a_base_rating = max(a_anchor_base - max_allowed_delta, min(a_anchor_base + max_allowed_delta, a_uncon_rating))
 
-h_clamped_status = "CLAMPED (+5.00 max)" if h_base_rating != h_uncon_rating else "WITHIN BOUNDS"
-a_clamped_status = "CLAMPED (-5.00 max)" if a_base_rating != a_uncon_rating else "WITHIN BOUNDS"
+h_clamped_status = f"CLAMPED (+{max_allowed_delta:.2f} max)" if h_base_rating != h_uncon_rating else "WITHIN BOUNDS"
+a_clamped_status = f"CLAMPED (-{max_allowed_delta:.2f} max)" if a_base_rating != a_uncon_rating else "WITHIN BOUNDS"
 
 # ---------------------------------------------------------
 # 6. Model Probability Calculation
@@ -295,9 +307,31 @@ logits = np.array([logit_h, logit_d, logit_a])
 exp_logits = np.exp(logits - np.max(logits))
 probs = exp_logits / np.sum(exp_logits)
 
-calc_prob_home = round(float(probs[0] * 100), 1)
-calc_prob_draw = round(float(probs[1] * 100), 1)
-calc_prob_away = round(float(probs[2] * 100), 1)
+def apply_excess_tapering(p_home: float, p_draw: float, p_away: float, threshold: float = 0.75):
+    probs_list = [p_home, p_draw, p_away]
+    max_idx = probs_list.index(max(probs_list))
+    max_val = probs_list[max_idx]
+    
+    if max_val > threshold:
+        excess = max_val - threshold
+        min_idx = probs_list.index(min(probs_list))
+        draw_idx = 3 - max_idx - min_idx
+        
+        probs_list[max_idx] = threshold + (excess * 0.50)
+        probs_list[draw_idx] += (excess * 0.35)
+        probs_list[min_idx] += (excess * 0.15)
+        
+        total = sum(probs_list)
+        probs_list = [p / total for p in probs_list]
+        
+    return probs_list[0], probs_list[1], probs_list[2]
+
+prob_h, prob_d, prob_a = float(probs[0]), float(probs[1]), float(probs[2])
+prob_h, prob_d, prob_a = apply_excess_tapering(prob_h, prob_d, prob_a, threshold=0.75)
+
+calc_prob_home = round(float(prob_h * 100), 1)
+calc_prob_draw = round(float(prob_d * 100), 1)
+calc_prob_away = round(float(prob_a * 100), 1)
 
 favored_side = "Home" if calc_prob_home >= max(calc_prob_draw, calc_prob_away) else (
     "Away" if calc_prob_away >= calc_prob_draw else "Draw"

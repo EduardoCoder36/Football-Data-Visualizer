@@ -139,6 +139,25 @@ CLASH_ADVANTAGE = {
     ("Control", "Transition"): -4.5,
 }
 
+def apply_excess_tapering(p_home: float, p_draw: float, p_away: float, threshold: float = 0.75):
+    probs = [p_home, p_draw, p_away]
+    max_idx = probs.index(max(probs))
+    max_val = probs[max_idx]
+    
+    if max_val > threshold:
+        excess = max_val - threshold
+        min_idx = probs.index(min(probs))
+        draw_idx = 3 - max_idx - min_idx
+        
+        probs[max_idx] = threshold + (excess * 0.50)
+        probs[draw_idx] += (excess * 0.35)
+        probs[min_idx] += (excess * 0.15)
+        
+        total = sum(probs)
+        probs = [p / total for p in probs]
+        
+    return probs[0], probs[1], probs[2]
+
 def calculate_probabilities(delta: float):
     """Calibrated Softmax probability engine (c = 0.20, k = 0.075, beta = 0.065)."""
     c = 0.20
@@ -153,7 +172,10 @@ def calculate_probabilities(delta: float):
     exp_logits = np.exp(logits - np.max(logits))
     probs = exp_logits / np.sum(exp_logits)
     
-    return round(float(probs[0] * 100), 1), round(float(probs[1] * 100), 1), round(float(probs[2] * 100), 1)
+    prob_h, prob_d, prob_a = float(probs[0]), float(probs[1]), float(probs[2])
+    prob_h, prob_d, prob_a = apply_excess_tapering(prob_h, prob_d, prob_a, threshold=0.75)
+    
+    return round(float(prob_h * 100), 1), round(float(prob_d * 100), 1), round(float(prob_a * 100), 1)
 
 # 4. Fetch 2026-2027 schedule from FBref
 print("Fetching 2026-2027 schedule from soccerdata FBref...")
@@ -214,17 +236,23 @@ def build_prediction_records(df: pd.DataFrame, is_completed: bool):
         active_gw_completed = max(0, gw_int - 1) if not is_completed else max(0, gw_int - 1)
         max_allowed_delta = 1.25 * active_gw_completed
         
+        PROMOTED_DEFAULT_ANCHOR = 56.0
+        
         if h_team in anchor_ratings:
             h_anchor = anchor_ratings[h_team]
-            h_rating = max(h_anchor - max_allowed_delta, min(h_anchor + max_allowed_delta, h_uncon))
         else:
-            h_rating = h_uncon
+            h_anchor = PROMOTED_DEFAULT_ANCHOR
+            h_uncon = PROMOTED_DEFAULT_ANCHOR + (h_uncon - PROMOTED_DEFAULT_ANCHOR) * 0.45
+            
+        h_rating = max(h_anchor - max_allowed_delta, min(h_anchor + max_allowed_delta, h_uncon))
             
         if a_team in anchor_ratings:
             a_anchor = anchor_ratings[a_team]
-            a_rating = max(a_anchor - max_allowed_delta, min(a_anchor + max_allowed_delta, a_uncon))
         else:
-            a_rating = a_uncon
+            a_anchor = PROMOTED_DEFAULT_ANCHOR
+            a_uncon = PROMOTED_DEFAULT_ANCHOR + (a_uncon - PROMOTED_DEFAULT_ANCHOR) * 0.45
+            
+        a_rating = max(a_anchor - max_allowed_delta, min(a_anchor + max_allowed_delta, a_uncon))
         
         clash_key = (h_p['archetype'], a_p['archetype'])
         clash = CLASH_ADVANTAGE.get(clash_key, 0.0)
