@@ -87,12 +87,26 @@ profiles_df = pd.read_csv(csv_path).set_index('team')
 profiles_data = profiles_df.to_dict(orient='index')
 
 # 2025-2026 Anchor Baselines (end of prior 38-game season)
-anchor_csv_path = os.path.join(script_dir, "tactical_profiles_2025_2026.csv")
-if not os.path.exists(anchor_csv_path):
-    anchor_csv_path = "scripts/tactical_profiles_2025_2026.csv"
+try:
+    if not supabase_url or not supabase_key:
+        raise ValueError("Missing Supabase credentials")
 
-anchor_df = pd.read_csv(anchor_csv_path).set_index('team')
-anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
+    res = supabase.table("team_tactical_profiles").select("*").execute()
+    if not res.data:
+        raise ValueError("No data returned from team_tactical_profiles")
+
+    anchor_df = pd.DataFrame(res.data).set_index("team")
+    anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
+except Exception as e:
+    print(f"Warning: Failed to fetch anchor profiles from Supabase ({e}). Falling back to local CSV backup.")
+    anchor_csv_path = os.path.join(script_dir, "tactical_profiles_2025_2026.csv")
+    if not os.path.exists(anchor_csv_path):
+        anchor_csv_path = "scripts/tactical_profiles_2025_2026.csv"
+    if os.path.exists(anchor_csv_path):
+        anchor_df = pd.read_csv(anchor_csv_path).set_index('team')
+        anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
+    else:
+        anchor_ratings = {}
 
 h_prof = profiles_data.get('Brighton', {})
 a_prof = profiles_data.get('Arsenal', {})

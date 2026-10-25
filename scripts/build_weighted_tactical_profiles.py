@@ -89,13 +89,34 @@ unconstrained_base_rating = 45 + (normalize(merged['weighted_gls_p90']) * 0.45)
 merged['chaos_index'] = normalize(merged['Fouls_p90'])
 spread = 7 + (merged['chaos_index'] / 100.0 * 8)
 
-# Velocity Limiter (Option B): clamp to anchor baseline ± (1.25 * active_gameweeks_completed)
-anchor_csv_path = "scripts/tactical_profiles_2025_2026.csv"
-if os.path.exists(anchor_csv_path):
-    anchor_df = pd.read_csv(anchor_csv_path).set_index("team")
+# Supabase Client Initialization for anchor profiles
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
+load_dotenv(".env.local")
+supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
+
+try:
+    if not supabase_url or not supabase_key:
+        raise ValueError("Missing Supabase credentials")
+
+    client: Client = create_client(supabase_url, supabase_key)
+    res = client.table("team_tactical_profiles").select("*").execute()
+    if not res.data:
+        raise ValueError("No data returned from team_tactical_profiles")
+
+    anchor_df = pd.DataFrame(res.data).set_index("team")
     anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
-else:
-    anchor_ratings = {}
+except Exception as e:
+    print(f"Warning: Failed to fetch from Supabase ({e}). Falling back to local CSV backup.")
+    anchor_csv_path = "scripts/tactical_profiles_2025_2026.csv"
+    if os.path.exists(anchor_csv_path):
+        anchor_df = pd.read_csv(anchor_csv_path).set_index("team")
+        anchor_ratings = ((anchor_df["floor"] + anchor_df["ceiling"]) / 2.0).to_dict()
+    else:
+        anchor_ratings = {}
 
 # Active completed matches in 2026-2027
 s26_logs = match_logs[match_logs['date'] >= '2026-08-01']
