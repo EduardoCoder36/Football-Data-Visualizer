@@ -100,10 +100,50 @@ export class SyncEngine {
       kickoff: m.utcDate,
     }));
 
-    const { error } = await this.supabase
+    // Non-destructive upsert guard: query existing fixtures for this season
+    const { data: existingFixtures, error: fetchError } = await this.supabase
       .from("fixtures")
-      .upsert(fixtureRows, { onConflict: "id", ignoreDuplicates: false });
-    if (error) throw error;
+      .select("id, status, home_score, away_score")
+      .eq("season", season);
+    if (fetchError) throw fetchError;
+
+    const existingMap = new Map<number, { id: number; status: string; home_score: number | null; away_score: number | null }>();
+    (existingFixtures ?? []).forEach((f) => {
+      existingMap.set(f.id, f);
+    });
+
+    let skippedCount = 0;
+    const rowsToUpsert = fixtureRows.filter((incoming) => {
+      const existing = existingMap.get(incoming.id);
+      if (!existing) {
+        return true; // New fixture
+      }
+
+      // Check if existing record is already FINISHED with valid score
+      const isExistingFinished = existing.status === "FINISHED" && existing.home_score !== null;
+      if (isExistingFinished) {
+        const isIncomingStaleOrNull = incoming.status !== "FINISHED" || incoming.home_score === null;
+        if (isIncomingStaleOrNull) {
+          skippedCount++;
+          return false; // Reject stale downgrade / null overwrite
+        }
+      }
+
+      return true;
+    });
+
+    if (skippedCount > 0) {
+      console.warn(`[syncFixtures] Guarded ${skippedCount} finished fixture(s) in season ${season} against stale/null downgrade.`);
+    }
+
+    if (rowsToUpsert.length > 0) {
+      const { error } = await this.supabase
+        .from("fixtures")
+        .upsert(rowsToUpsert, { onConflict: "id", ignoreDuplicates: false });
+      if (error) throw error;
+    }
+
+    console.log(`[syncFixtures] Season ${season}: ${fixtureRows.length} evaluated, ${rowsToUpsert.length} upserted (${skippedCount} protected).`);
   }
 
   private async calculateTeamTrajectory(
