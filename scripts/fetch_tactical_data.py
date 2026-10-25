@@ -1,5 +1,21 @@
-import soccerdata as sd
+import os
 import pandas as pd
+import soccerdata as sd
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
+# Load environment variables
+load_dotenv(".env.local")
+
+supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
+
+if not supabase_url:
+    raise RuntimeError("Missing Supabase URL (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL) in environment or .env.local")
+if not supabase_key:
+    raise RuntimeError("Missing Supabase service role key (SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_KEY) in environment or .env.local")
+
+supabase: Client = create_client(supabase_url, supabase_key)
 
 print("1. Fetching tables...")
 fbref = sd.FBref(leagues="ENG-Premier League", seasons="2025-2026")
@@ -69,3 +85,35 @@ print(final_df.to_string(index=False))
 # Export to CSV inside scripts folder
 final_df.to_csv("scripts/tactical_profiles_2025_2026.csv", index=False)
 print("\nSaved output to scripts/tactical_profiles_2025_2026.csv")
+
+# Construct records for Supabase table team_tactical_profiles
+records = []
+for _, row in merged.iterrows():
+    records.append({
+        "id": f"2025-2026_{row['team']}",
+        "season": "2025-2026",
+        "team": str(row['team']),
+        "matches_played": int(row['Playing Time_MP']),
+        "possession": float(row['Poss']),
+        "goals_scored": int(row['Performance_Gls']),
+        "tackles_won": int(row['Performance_TklW']),
+        "interceptions": int(row['Performance_Int']),
+        "crosses": int(row['Performance_Crs']),
+        "fouls": int(row['Performance_Fls']),
+        "yellow_cards": int(row['Performance_CrdY']),
+        "tkl_int_p90": round(float(row['Tkl_Int_p90']), 2),
+        "crosses_p90": round(float(row['Crosses_p90']), 2),
+        "fouls_p90": round(float(row['Fouls_p90']), 2),
+        "score_control": float(row['score_control']),
+        "score_transition": float(row['score_transition']),
+        "score_direct": float(row['score_direct']),
+        "archetype": str(row['archetype']),
+        "chaos_index": float(row['chaos_index']),
+        "floor": float(row['floor']),
+        "ceiling": float(row['ceiling']),
+    })
+
+# Upsert to Supabase
+print(f"\nUpserting {len(records)} tactical profiles to Supabase table 'team_tactical_profiles'...")
+response = supabase.table("team_tactical_profiles").upsert(records, on_conflict="id").execute()
+print(f"Successfully upserted {len(response.data or records)} team records to 'team_tactical_profiles'.")
