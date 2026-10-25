@@ -12,12 +12,12 @@ export class SyncEngine {
   constructor(
     private supabase: SupabaseClient,
     private apiClient: FootballDataClient
-  ) {}
+  ) { }
 
   async runSync(options: SyncOptions) {
     console.log("Fetching match schedules and finished fixtures...");
     const [currentData, prevData] = await Promise.all([
-      this.apiClient.getMatches("PL", options.currentSeasonYear),
+      this.apiClient.getMatches("PL"),
       this.apiClient.getMatches("PL", options.previousSeasonYear),
     ]);
 
@@ -100,7 +100,9 @@ export class SyncEngine {
       kickoff: m.utcDate,
     }));
 
-    const { error } = await this.supabase.from("fixtures").upsert(fixtureRows);
+    const { error } = await this.supabase
+      .from("fixtures")
+      .upsert(fixtureRows, { onConflict: "id", ignoreDuplicates: false });
     if (error) throw error;
   }
 
@@ -147,10 +149,10 @@ export class SyncEngine {
         const isHome = match.home_team_id === team.id;
         const teamScore = isHome ? match.home_score : match.away_score;
         const opponentScore = isHome ? match.away_score : match.home_score;
-        
+
         cumulativeGoalsFor += teamScore;
         cumulativeGoalsAgainst += opponentScore;
-        
+
         if (teamScore > opponentScore) cumulativeCurrentPoints += 3;
         else if (teamScore === opponentScore) cumulativeCurrentPoints += 1;
       } else if (match.status === "POSTPONED") {
