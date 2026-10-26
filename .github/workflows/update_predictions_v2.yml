@@ -1,0 +1,49 @@
+name: Update Tactical Engine V2 (Automated Pipeline)
+
+on:
+  workflow_dispatch: # Allows manual trigger via GitHub UI or phone shortcut
+  schedule:
+    # Runs daily at 06:00 UTC to capture overnight updates / match results
+    - cron: '0 6 * * *'
+
+jobs:
+  update-v2-engine:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests supabase python-dotenv
+
+      - name: Step 1 - Fetch Raw Stats (Understat & football-data.org)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: |
+          python scripts/fetch_raw_stats_v2.py
+
+      - name: Step 2 - Recompute Form-Weighted Tactical Profiles V2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/compute_tactical_profiles_v2.py
+
+      - name: Step 3 - Synchronize Match Predictions V2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: |
+          python scripts/sync_upcoming_predictions_v2.py
