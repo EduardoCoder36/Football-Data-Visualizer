@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests supabase python-dotenv pandas numpy
+          pip install requests supabase python-dotenv pandas numpy soccerdata beautifulsoup4 html5lib
 
       - name: Step 1 - Fetch Raw Stats (Understat & football-data.org)
         env:
