@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
@@ -29,6 +29,12 @@ const V1_ALIASES: Record<string, string> = {
   'Wolves': 'Wolverhampton',
   'Bournemouth': 'Bournemouth',
 };
+
+// Client-side browser Supabase instance using public anon key
+const browserSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
 
 export const getStaticProps: GetStaticProps<V2PageProps> = async () => {
   const supabase = createClient(
@@ -82,37 +88,186 @@ export const getStaticProps: GetStaticProps<V2PageProps> = async () => {
 };
 
 export default function V2DashboardPage({
-  v2Predictions,
-  v1Predictions,
-  profiles,
+  v2Predictions: initialV2Predictions = [],
+  v1Predictions: initialV1Predictions = [],
+  profiles: initialProfiles = {},
 }: V2PageProps) {
+  // Live state with initial props fallback
+  const [v2Predictions, setV2Predictions] = useState<V2MatchPrediction[]>(initialV2Predictions);
+  const [v1Predictions, setV1Predictions] = useState<V1MatchPrediction[]>(initialV1Predictions);
+  const [profiles, setProfiles] = useState<Record<string, TeamTacticalProfileV2>>(initialProfiles);
+  const [isLoadingGw, setIsLoadingGw] = useState(false);
+  const [gwError, setGwError] = useState<string | null>(null);
+
   // Model Comparison Mode Toggle state
   const [showComparison, setShowComparison] = useState(false);
 
-  // Extract unique gameweeks sorted 1 to 38
-  const availableMatchdays = useMemo(() => {
-    const set = new Set<number>();
-    v2Predictions.forEach((p) => {
-      if (p.matchday) set.add(p.matchday);
-    });
-    return Array.from(set).sort((a, b) => a - b);
-  }, [v2Predictions]);
+  // User manual matchday selection tracking
+  const [userSelected, setUserSelected] = useState(false);
 
   // Determine the live/earliest upcoming matchday
   const earliestUpcomingMatchday = useMemo(() => {
     const upcoming = v2Predictions.find(
       (p) => p.status !== 'FINISHED' && p.matchday
     );
-    if (upcoming) return upcoming.matchday;
-    return availableMatchdays[availableMatchdays.length - 1] || 9;
-  }, [v2Predictions, availableMatchdays]);
+    if (upcoming && upcoming.matchday) return Number(upcoming.matchday);
+    return 9;
+  }, [v2Predictions]);
 
-  // Active matchday state (default to next live round)
-  const [selectedMatchday, setSelectedMatchday] = useState<number>(earliestUpcomingMatchday);
+  // Active matchday state (default to next live round, parsed as integer)
+  const [selectedMatchday, setSelectedMatchday] = useState<number>(() => {
+    if (initialV2Predictions && initialV2Predictions.length > 0) {
+      const upcoming = initialV2Predictions.find(
+        (p) => p.status !== 'FINISHED' && p.matchday
+      );
+      if (upcoming && upcoming.matchday) return Number(upcoming.matchday);
+    }
+    return 9;
+  });
 
-  // Filter matches for selected matchday
+  // Extract unique gameweeks sorted 1 to 38
+  const availableMatchdays = useMemo(() => {
+    const set = new Set<number>();
+    v2Predictions.forEach((p) => {
+      if (p.matchday) set.add(Number(p.matchday));
+    });
+    // Default to 1..38 so buttons are always clickable even before full dataset loads
+    if (set.size === 0) {
+      return Array.from({ length: 38 }, (_, i) => i + 1);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [v2Predictions]);
+
+  // If predictions update and user hasn't clicked, track earliest upcoming
+  useEffect(() => {
+    if (!userSelected && v2Predictions.length > 0) {
+      const upcoming = v2Predictions.find(
+        (p) => p.status !== 'FINISHED' && p.matchday
+      );
+      if (upcoming && upcoming.matchday) {
+        setSelectedMatchday(Number(upcoming.matchday));
+      }
+    }
+  }, [v2Predictions, userSelected]);
+
+  // Client-side Supabase fetch query for the active matchday:
+  // Parses matchday as an integer Number(selectedMatchday), logs errors to console
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function fetchMatchdayPredictions() {
+      const matchdayInt = Number(selectedMatchday);
+      if (isNaN(matchdayInt)) {
+        console.warn('[V2 Engine] Invalid selectedMatchday:', selectedMatchday);
+        return;
+      }
+
+      setIsLoadingGw(true);
+      setGwError(null);
+
+      try {
+        const { data, error } = await browserSupabase
+          .from('match_predictions_v2')
+          .select('*')
+          .eq('matchday', matchdayInt)
+          .order('utc_date', { ascending: true });
+
+        if (error) {
+          console.error(
+            `[V2 Engine] Supabase error fetching match_predictions_v2 for matchday ${matchdayInt}:`,
+            error
+          );
+          if (!isCancelled) {
+            setGwError(error.message || 'Error fetching fixtures from Supabase.');
+          }
+          return;
+        }
+
+        if (!isCancelled && data && data.length > 0) {
+          // Merge newly fetched fixtures into v2Predictions state
+          setV2Predictions((prev) => {
+            const map = new Map<string, V2MatchPrediction>();
+            prev.forEach((p) => map.set(p.id, p));
+            (data as V2MatchPrediction[]).forEach((p) => map.set(p.id, p));
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.error('[V2 Engine] Unexpected error fetching matchday:', err);
+        if (!isCancelled) {
+          setGwError(err instanceof Error ? err.message : 'Unknown query error');
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingGw(false);
+        }
+      }
+    }
+
+    fetchMatchdayPredictions();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedMatchday]);
+
+  // On initial mount, also fetch full dataset and tactical profiles if missing
+  useEffect(() => {
+    async function fetchFullDataset() {
+      // 1. If v2Predictions is empty or missing data, fetch all
+      if (v2Predictions.length === 0) {
+        const { data, error } = await browserSupabase
+          .from('match_predictions_v2')
+          .select('*')
+          .order('matchday', { ascending: true })
+          .order('utc_date', { ascending: true });
+
+        if (error) {
+          console.error('[V2 Engine] Supabase error fetching all match_predictions_v2:', error);
+        } else if (data) {
+          setV2Predictions(data as V2MatchPrediction[]);
+        }
+      }
+
+      // 2. Tactical Profiles if missing
+      if (Object.keys(profiles).length === 0) {
+        const { data, error } = await browserSupabase
+          .from('team_tactical_profiles_v2')
+          .select('*');
+
+        if (error) {
+          console.error('[V2 Engine] Supabase error fetching tactical profiles:', error);
+        } else if (data) {
+          const map: Record<string, TeamTacticalProfileV2> = {};
+          (data as TeamTacticalProfileV2[]).forEach((p) => {
+            map[p.team] = p;
+          });
+          setProfiles(map);
+        }
+      }
+
+      // 3. Legacy V1 predictions if missing
+      if (v1Predictions.length === 0) {
+        const { data, error } = await browserSupabase
+          .from('match_predictions')
+          .select('*')
+          .order('match_date', { ascending: true });
+
+        if (error) {
+          console.error('[V2 Engine] Supabase error fetching legacy match_predictions:', error);
+        } else if (data) {
+          setV1Predictions(data as V1MatchPrediction[]);
+        }
+      }
+    }
+
+    fetchFullDataset();
+  }, []);
+
+  // Filter matches for selected matchday (strict integer comparison)
   const filteredMatches = useMemo(() => {
-    return v2Predictions.filter((p) => p.matchday === selectedMatchday);
+    const targetMatchday = Number(selectedMatchday);
+    return v2Predictions.filter((p) => Number(p.matchday) === targetMatchday);
   }, [v2Predictions, selectedMatchday]);
 
   // Map V1 predictions by (matchday, home_team, away_team)
@@ -128,8 +283,8 @@ export default function V2DashboardPage({
   }, [v1Predictions]);
 
   // Round classification
-  const isPastRound = selectedMatchday < earliestUpcomingMatchday;
-  const isLiveRound = selectedMatchday === earliestUpcomingMatchday;
+  const isPastRound = Number(selectedMatchday) < Number(earliestUpcomingMatchday);
+  const isLiveRound = Number(selectedMatchday) === Number(earliestUpcomingMatchday);
 
   // Calculate cumulative accuracy across all finished matches up to current matchday
   const cumulativeAccuracy = useMemo(() => {
@@ -351,7 +506,10 @@ export default function V2DashboardPage({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedMatchday(earliestUpcomingMatchday)}
+                onClick={() => {
+                  setUserSelected(true);
+                  setSelectedMatchday(Number(earliestUpcomingMatchday));
+                }}
                 className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
               >
                 Jump to Live Round (GW {earliestUpcomingMatchday}) →
@@ -361,15 +519,18 @@ export default function V2DashboardPage({
 
           <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-thin scrollbar-thumb-neutral-800">
             {availableMatchdays.map((gw) => {
-              const isSelected = selectedMatchday === gw;
-              const isLive = gw === earliestUpcomingMatchday;
-              const isPast = gw < earliestUpcomingMatchday;
+              const isSelected = Number(selectedMatchday) === Number(gw);
+              const isLive = Number(gw) === Number(earliestUpcomingMatchday);
+              const isPast = Number(gw) < Number(earliestUpcomingMatchday);
 
               return (
                 <button
                   key={gw}
                   type="button"
-                  onClick={() => setSelectedMatchday(gw)}
+                  onClick={() => {
+                    setUserSelected(true);
+                    setSelectedMatchday(Number(gw));
+                  }}
                   className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
                     isSelected
                       ? 'bg-emerald-500 text-neutral-950 shadow-lg shadow-emerald-500/20'
@@ -416,7 +577,13 @@ export default function V2DashboardPage({
 
         {/* Matches Grid */}
         <div className="space-y-4">
-          {filteredMatches.length > 0 ? (
+          {isLoadingGw && filteredMatches.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900/30 p-12 text-center">
+              <div className="h-7 w-7 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent mb-3" />
+              <p className="text-sm text-neutral-300 font-medium">Loading Gameweek {selectedMatchday} fixtures...</p>
+              <p className="text-xs text-neutral-500 mt-1">Connecting to Supabase match predictions database</p>
+            </div>
+          ) : filteredMatches.length > 0 ? (
             filteredMatches.map((m) => {
               const v1Key = `${m.matchday}_${m.home_team}_${m.away_team}`;
               const legacy = v1Map.get(v1Key) || null;
@@ -436,7 +603,14 @@ export default function V2DashboardPage({
             })
           ) : (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-900/30 p-12 text-center text-sm text-neutral-400">
-              No fixtures scheduled for Gameweek {selectedMatchday}.
+              {gwError ? (
+                <div className="text-rose-400">
+                  <p className="font-bold">Error loading Gameweek {selectedMatchday} fixtures</p>
+                  <p className="text-xs text-neutral-400 mt-1 font-mono">{gwError}</p>
+                </div>
+              ) : (
+                <p>No fixtures scheduled for Gameweek {selectedMatchday}.</p>
+              )}
             </div>
           )}
         </div>
