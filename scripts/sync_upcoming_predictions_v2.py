@@ -132,27 +132,131 @@ CANONICAL_TEAMS: Dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# 3. Rolling Form History & Match Prediction Calculation Engine
+# 3. Schedule Synchronization & Multi-Competition Rest History
 # ---------------------------------------------------------------------------
-def build_team_match_history(matches: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+def sync_all_fixtures_schedule() -> List[Dict[str, Any]]:
+    competitions = ["PL", "CL"]
+    all_schedule_records = []
+    headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
+    now_utc = datetime.now(timezone.utc).isoformat()
+
+    for comp in competitions:
+        url = f"https://api.football-data.org/v4/competitions/{comp}/matches"
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                comp_matches = resp.json().get("matches", [])
+                comp_name = resp.json().get("competition", {}).get("name", comp)
+                for m in comp_matches:
+                    mid = m.get("id")
+                    raw_h = m.get("homeTeam", {}).get("name", "")
+                    raw_a = m.get("awayTeam", {}).get("name", "")
+                    h_team = CANONICAL_TEAMS.get(raw_h, raw_h)
+                    a_team = CANONICAL_TEAMS.get(raw_a, raw_a)
+                    status = m.get("status", "SCHEDULED")
+                    score = m.get("score", {}).get("fullTime", {})
+                    h_score = score.get("home") if status == "FINISHED" else None
+                    a_score = score.get("away") if status == "FINISHED" else None
+
+                    all_schedule_records.append({
+                        "id": f"{comp}_{mid}",
+                        "competition_code": comp,
+                        "competition_name": comp_name,
+                        "match_id": int(mid),
+                        "matchday": int(m.get("matchday", 1) or 1),
+                        "home_team": h_team,
+                        "away_team": a_team,
+                        "utc_date": m.get("utcDate", ""),
+                        "status": status,
+                        "home_score": h_score,
+                        "away_score": a_score,
+                        "updated_at": now_utc,
+                    })
+            else:
+                logger.warning(f"Failed to fetch {comp}: HTTP {resp.status_code}")
+        except Exception as e:
+            logger.error(f"Error fetching competition {comp}: {e}")
+
+    if all_schedule_records:
+        logger.info(f"Upserting {len(all_schedule_records)} matches to 'all_fixtures_schedule'...")
+        # Prepare records for Supabase table (which does not have matchday column)
+        db_records = [
+            {
+                "id": r["id"],
+                "competition_code": r["competition_code"],
+                "competition_name": r["competition_name"],
+                "match_id": r["match_id"],
+                "home_team": r["home_team"],
+                "away_team": r["away_team"],
+                "utc_date": r["utc_date"],
+                "status": r["status"],
+                "home_score": r["home_score"],
+                "away_score": r["away_score"],
+                "updated_at": r["updated_at"],
+            }
+            for r in all_schedule_records
+        ]
+        batch_size = 100
+        for i in range(0, len(db_records), batch_size):
+            supabase.table("all_fixtures_schedule").upsert(
+                db_records[i : i + batch_size], on_conflict="id"
+            ).execute()
+        logger.info("Successfully updated 'all_fixtures_schedule'.")
+
+    return all_schedule_records
+
+
+def build_all_competition_match_history(
+    schedule_records: List[Dict[str, Any]]
+) -> Dict[str, List[Dict[str, Any]]]:
     history: Dict[str, List[Dict[str, Any]]] = {}
     finished = [
-        m
-        for m in matches
-        if m.get("status") == "FINISHED"
-        and m.get("score", {}).get("fullTime", {}).get("home") is not None
+        r for r in schedule_records if r["status"] == "FINISHED" and r["utc_date"]
     ]
-    # Sort chronologically
-    finished.sort(key=lambda x: x.get("utcDate", ""))
+    finished.sort(key=lambda x: x["utc_date"])
+    for r in finished:
+        history.setdefault(r["home_team"], []).append({"utc_date": r["utc_date"]})
+        history.setdefault(r["away_team"], []).append({"utc_date": r["utc_date"]})
+    return history
+
+
+def build_team_match_history(pl_matches: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    history: Dict[str, List[Dict[str, Any]]] = {}
+    finished = []
+    for m in pl_matches:
+        if m.get("status") != "FINISHED":
+            continue
+        if "home_score" in m and m.get("home_score") is not None:
+            finished.append({
+                "home_team": m["home_team"],
+                "away_team": m["away_team"],
+                "utc_date": m.get("utc_date", ""),
+                "home_score": m["home_score"],
+                "away_score": m["away_score"],
+            })
+        elif "score" in m:
+            score = m.get("score", {}).get("fullTime", {})
+            h_score = score.get("home")
+            a_score = score.get("away")
+            if h_score is not None and a_score is not None:
+                raw_h = m.get("homeTeam", {}).get("name", "")
+                raw_a = m.get("awayTeam", {}).get("name", "")
+                finished.append({
+                    "home_team": CANONICAL_TEAMS.get(raw_h, raw_h),
+                    "away_team": CANONICAL_TEAMS.get(raw_a, raw_a),
+                    "utc_date": m.get("utcDate", ""),
+                    "home_score": h_score,
+                    "away_score": a_score,
+                })
+
+    finished.sort(key=lambda x: x["utc_date"])
 
     for m in finished:
-        raw_h = m.get("homeTeam", {}).get("name", "")
-        raw_a = m.get("awayTeam", {}).get("name", "")
-        h_team = CANONICAL_TEAMS.get(raw_h, raw_h)
-        a_team = CANONICAL_TEAMS.get(raw_a, raw_a)
-        utc = m.get("utcDate", "")
-        h_goals = m["score"]["fullTime"]["home"]
-        a_goals = m["score"]["fullTime"]["away"]
+        h_team = m["home_team"]
+        a_team = m["away_team"]
+        utc = m["utc_date"]
+        h_goals = m["home_score"]
+        a_goals = m["away_score"]
 
         history.setdefault(h_team, []).append({
             "utc_date": utc,
@@ -287,6 +391,13 @@ def compute_match_probabilities(
 # 4. Pipeline Execution
 # ---------------------------------------------------------------------------
 def sync_predictions_v2():
+    logger.info("Syncing all competition fixtures into 'all_fixtures_schedule'...")
+    all_records = sync_all_fixtures_schedule()
+    rest_history = build_all_competition_match_history(all_records)
+
+    pl_matches = [r for r in all_records if r.get("competition_code") == "PL"]
+    team_history = build_team_match_history(pl_matches)
+
     logger.info("Loading V2 tactical profiles from Supabase 'team_tactical_profiles_v2'...")
     p_res = supabase.table("team_tactical_profiles_v2").select("*").execute()
     if not p_res.data:
@@ -295,26 +406,15 @@ def sync_predictions_v2():
     profiles = {r["team"]: r for r in p_res.data}
     logger.info(f"Loaded {len(profiles)} tactical profiles.")
 
-    logger.info("Fetching fixtures from football-data.org API...")
-    url = "https://api.football-data.org/v4/competitions/PL/matches"
-    resp = requests.get(url, headers={"X-Auth-Token": FOOTBALL_DATA_API_KEY}, timeout=15)
-    resp.raise_for_status()
-    matches = resp.json().get("matches", [])
-    logger.info(f"Retrieved {len(matches)} fixtures from football-data.org.")
-
-    team_history = build_team_match_history(matches)
-
     now_utc = datetime.now(timezone.utc).isoformat()
     records: List[Dict[str, Any]] = []
     form_deltas: Dict[str, float] = {}
     rest_deltas: Dict[str, float] = {}
 
-    for m in matches:
-        mid = m.get("id")
-        raw_h = m.get("homeTeam", {}).get("name", "")
-        raw_a = m.get("awayTeam", {}).get("name", "")
-        home_team = CANONICAL_TEAMS.get(raw_h, raw_h)
-        away_team = CANONICAL_TEAMS.get(raw_a, raw_a)
+    for m in pl_matches:
+        mid = m.get("match_id")
+        home_team = m.get("home_team", "")
+        away_team = m.get("away_team", "")
 
         if home_team not in profiles or away_team not in profiles:
             logger.warning(f"Skipping match {mid} ({home_team} vs {away_team}): missing tactical profile.")
@@ -323,14 +423,14 @@ def sync_predictions_v2():
         hp = profiles[home_team]
         ap = profiles[away_team]
 
-        match_utc = m.get("utcDate", "")
+        match_utc = m.get("utc_date", "")
         form_h = get_recent_form_score(team_history.get(home_team, []), match_utc)
         form_a = get_recent_form_score(team_history.get(away_team, []), match_utc)
         d_form = max(-8.0, min(8.0, form_h - form_a))
         form_deltas[str(mid)] = d_form
 
-        rest_h = calculate_rest_days(team_history.get(home_team, []), match_utc)
-        rest_a = calculate_rest_days(team_history.get(away_team, []), match_utc)
+        rest_h = calculate_rest_days(rest_history.get(home_team, []), match_utc)
+        rest_a = calculate_rest_days(rest_history.get(away_team, []), match_utc)
         fatigue_h = compute_fatigue_penalty(rest_h)
         fatigue_a = compute_fatigue_penalty(rest_a)
         d_rest = max(-5.0, min(5.0, fatigue_h - fatigue_a))
@@ -341,13 +441,8 @@ def sync_predictions_v2():
         )
 
         status = m.get("status", "SCHEDULED")
-        score = m.get("score", {}).get("fullTime", {})
-        home_score = None
-        away_score = None
-
-        if status == "FINISHED" and score:
-            home_score = score.get("home")
-            away_score = score.get("away")
+        home_score = m.get("home_score")
+        away_score = m.get("away_score")
 
         records.append({
             "id": str(mid),
