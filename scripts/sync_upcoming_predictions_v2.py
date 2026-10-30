@@ -180,10 +180,38 @@ def get_recent_form_score(
     return score
 
 
+def calculate_rest_days(history: List[Dict[str, Any]], target_utc_date: str) -> float:
+    prior_matches = [m for m in history if m["utc_date"] < target_utc_date]
+    if not prior_matches:
+        return 7.0
+
+    try:
+        t_target = datetime.fromisoformat(target_utc_date.replace("Z", "+00:00"))
+        t_last = datetime.fromisoformat(prior_matches[-1]["utc_date"].replace("Z", "+00:00"))
+        diff_days = (t_target - t_last).total_seconds() / 86400.0
+        if diff_days > 21.0:
+            return 7.0
+        return max(0.0, diff_days)
+    except Exception:
+        return 7.0
+
+
+def compute_fatigue_penalty(days_rest: float) -> float:
+    if days_rest >= 5.0:
+        return 0.0
+    elif days_rest >= 3.5:
+        return -1.0
+    elif days_rest >= 2.5:
+        return -2.5
+    else:
+        return -4.0
+
+
 def compute_match_probabilities(
     hp: Dict[str, Any],
     ap: Dict[str, Any],
     d_form: float = 0.0,
+    d_rest: float = 0.0,
 ) -> Tuple[float, float, float, float, float, float]:
     """
     Computes (prob_home, prob_draw, prob_away, d_tactical, rating_edge_h, chaos)
@@ -213,8 +241,8 @@ def compute_match_probabilities(
     # B. Baseline Quality Advantage
     d_quality = (hp["floor"] + hp["ceiling"]) - (ap["floor"] + ap["ceiling"])
 
-    # C. Home Advantage & Combined Rating Edge (incorporating 4-game form modifier)
-    rating_edge_h = d_quality + 0.50 * d_tactical + 8.0 + d_form
+    # C. Home Advantage & Combined Rating Edge (incorporating form and rest modifiers)
+    rating_edge_h = d_quality + 0.50 * d_tactical + 8.0 + d_form + d_rest
 
     # D. Chaos Flattening & Tapered Softmax
     chaos = (hp["chaos_index"] + ap["chaos_index"]) / 2.0
@@ -260,6 +288,7 @@ def sync_predictions_v2():
     now_utc = datetime.now(timezone.utc).isoformat()
     records: List[Dict[str, Any]] = []
     form_deltas: Dict[str, float] = {}
+    rest_deltas: Dict[str, float] = {}
 
     for m in matches:
         mid = m.get("id")
@@ -281,8 +310,15 @@ def sync_predictions_v2():
         d_form = max(-8.0, min(8.0, form_h - form_a))
         form_deltas[str(mid)] = d_form
 
+        rest_h = calculate_rest_days(team_history.get(home_team, []), match_utc)
+        rest_a = calculate_rest_days(team_history.get(away_team, []), match_utc)
+        fatigue_h = compute_fatigue_penalty(rest_h)
+        fatigue_a = compute_fatigue_penalty(rest_a)
+        d_rest = max(-5.0, min(5.0, fatigue_h - fatigue_a))
+        rest_deltas[str(mid)] = d_rest
+
         prob_h, prob_d, prob_a, d_tactical, rating_edge, chaos = compute_match_probabilities(
-            hp, ap, d_form
+            hp, ap, d_form, d_rest
         )
 
         status = m.get("status", "SCHEDULED")
@@ -339,6 +375,7 @@ def sync_predictions_v2():
         preview_rows = []
         for f in next_fixtures:
             f_delta = form_deltas.get(f["id"], 0.0)
+            r_delta = rest_deltas.get(f["id"], 0.0)
             preview_rows.append({
                 "Matchday": f["matchday"],
                 "Fixture": f"{f['home_team']} vs {f['away_team']}",
@@ -347,6 +384,7 @@ def sync_predictions_v2():
                 "Away Win %": f"{f['prob_away'] * 100:.1f}%",
                 "Tactical Delta": f"{f['tactical_delta']:+.2f}",
                 "Form Delta": f"{f_delta:+.1f}",
+                "Rest Delta": f"{r_delta:+.1f}",
                 "Chaos": f"{f['chaos_rating']:.1f}",
             })
 
