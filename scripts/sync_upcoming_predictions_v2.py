@@ -174,7 +174,7 @@ def compute_match_probabilities(
 
     logit_h = rating_edge_h / temperature
     logit_a = -rating_edge_h / temperature
-    logit_draw = (15.0 - 0.15 * abs(rating_edge_h)) / temperature
+    logit_draw = -0.27 - (0.80 * abs(rating_edge_h)) / temperature
 
     exp_h = math.exp(logit_h)
     exp_d = math.exp(logit_draw)
