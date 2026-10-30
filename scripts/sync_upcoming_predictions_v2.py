@@ -132,10 +132,58 @@ CANONICAL_TEAMS: Dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# 3. Match Prediction Calculation Engine
+# 3. Rolling Form History & Match Prediction Calculation Engine
 # ---------------------------------------------------------------------------
+def build_team_match_history(matches: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    history: Dict[str, List[Dict[str, Any]]] = {}
+    finished = [
+        m
+        for m in matches
+        if m.get("status") == "FINISHED"
+        and m.get("score", {}).get("fullTime", {}).get("home") is not None
+    ]
+    # Sort chronologically
+    finished.sort(key=lambda x: x.get("utcDate", ""))
+
+    for m in finished:
+        raw_h = m.get("homeTeam", {}).get("name", "")
+        raw_a = m.get("awayTeam", {}).get("name", "")
+        h_team = CANONICAL_TEAMS.get(raw_h, raw_h)
+        a_team = CANONICAL_TEAMS.get(raw_a, raw_a)
+        utc = m.get("utcDate", "")
+        h_goals = m["score"]["fullTime"]["home"]
+        a_goals = m["score"]["fullTime"]["away"]
+
+        history.setdefault(h_team, []).append({
+            "utc_date": utc,
+            "result": "W" if h_goals > a_goals else ("D" if h_goals == a_goals else "L"),
+        })
+        history.setdefault(a_team, []).append({
+            "utc_date": utc,
+            "result": "W" if a_goals > h_goals else ("D" if a_goals == h_goals else "L"),
+        })
+    return history
+
+
+def get_recent_form_score(
+    history: List[Dict[str, Any]], target_utc_date: str, n_matches: int = 4
+) -> float:
+    prior_matches = [m for m in history if m["utc_date"] < target_utc_date]
+    last_n = prior_matches[-n_matches:] if prior_matches else []
+
+    score = 0.0
+    for m in last_n:
+        if m["result"] == "W":
+            score += 2.0
+        elif m["result"] == "L":
+            score -= 2.0
+    return score
+
+
 def compute_match_probabilities(
-    hp: Dict[str, Any], ap: Dict[str, Any]
+    hp: Dict[str, Any],
+    ap: Dict[str, Any],
+    d_form: float = 0.0,
 ) -> Tuple[float, float, float, float, float, float]:
     """
     Computes (prob_home, prob_draw, prob_away, d_tactical, rating_edge_h, chaos)
@@ -165,8 +213,8 @@ def compute_match_probabilities(
     # B. Baseline Quality Advantage
     d_quality = (hp["floor"] + hp["ceiling"]) - (ap["floor"] + ap["ceiling"])
 
-    # C. Home Advantage & Combined Rating Edge
-    rating_edge_h = d_quality + 0.50 * d_tactical + 8.0
+    # C. Home Advantage & Combined Rating Edge (incorporating 4-game form modifier)
+    rating_edge_h = d_quality + 0.50 * d_tactical + 8.0 + d_form
 
     # D. Chaos Flattening & Tapered Softmax
     chaos = (hp["chaos_index"] + ap["chaos_index"]) / 2.0
@@ -207,8 +255,11 @@ def sync_predictions_v2():
     matches = resp.json().get("matches", [])
     logger.info(f"Retrieved {len(matches)} fixtures from football-data.org.")
 
+    team_history = build_team_match_history(matches)
+
     now_utc = datetime.now(timezone.utc).isoformat()
     records: List[Dict[str, Any]] = []
+    form_deltas: Dict[str, float] = {}
 
     for m in matches:
         mid = m.get("id")
@@ -224,7 +275,15 @@ def sync_predictions_v2():
         hp = profiles[home_team]
         ap = profiles[away_team]
 
-        prob_h, prob_d, prob_a, d_tactical, rating_edge, chaos = compute_match_probabilities(hp, ap)
+        match_utc = m.get("utcDate", "")
+        form_h = get_recent_form_score(team_history.get(home_team, []), match_utc)
+        form_a = get_recent_form_score(team_history.get(away_team, []), match_utc)
+        d_form = max(-8.0, min(8.0, form_h - form_a))
+        form_deltas[str(mid)] = d_form
+
+        prob_h, prob_d, prob_a, d_tactical, rating_edge, chaos = compute_match_probabilities(
+            hp, ap, d_form
+        )
 
         status = m.get("status", "SCHEDULED")
         score = m.get("score", {}).get("fullTime", {})
@@ -241,7 +300,7 @@ def sync_predictions_v2():
             "home_team": home_team,
             "away_team": away_team,
             "matchday": int(m.get("matchday", 1)),
-            "utc_date": m.get("utcDate", ""),
+            "utc_date": match_utc,
             "status": status,
             "home_score": home_score,
             "away_score": away_score,
@@ -279,6 +338,7 @@ def sync_predictions_v2():
 
         preview_rows = []
         for f in next_fixtures:
+            f_delta = form_deltas.get(f["id"], 0.0)
             preview_rows.append({
                 "Matchday": f["matchday"],
                 "Fixture": f"{f['home_team']} vs {f['away_team']}",
@@ -286,6 +346,7 @@ def sync_predictions_v2():
                 "Draw %": f"{f['prob_draw'] * 100:.1f}%",
                 "Away Win %": f"{f['prob_away'] * 100:.1f}%",
                 "Tactical Delta": f"{f['tactical_delta']:+.2f}",
+                "Form Delta": f"{f_delta:+.1f}",
                 "Chaos": f"{f['chaos_rating']:.1f}",
             })
 
