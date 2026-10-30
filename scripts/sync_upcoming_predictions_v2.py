@@ -257,9 +257,28 @@ def compute_match_probabilities(
     exp_a = math.exp(logit_a)
     denom = exp_h + exp_d + exp_a
 
-    prob_h = round(exp_h / denom, 4)
-    prob_d = round(exp_d / denom, 4)
-    prob_a = round(exp_a / denom, 4)
+    prob_h = exp_h / denom
+    prob_d = exp_d / denom
+    prob_a = exp_a / denom
+
+    # E. Soft Favourite Taper (Diminishing Returns Above 78.0%)
+    CAP_THRESHOLD = 0.78
+
+    if prob_h > CAP_THRESHOLD:
+        excess = prob_h - CAP_THRESHOLD
+        prob_h = CAP_THRESHOLD + 0.45 * excess
+        prob_d = prob_d + 0.40 * excess
+        prob_a = prob_a + 0.15 * excess
+    elif prob_a > CAP_THRESHOLD:
+        excess = prob_a - CAP_THRESHOLD
+        prob_a = CAP_THRESHOLD + 0.45 * excess
+        prob_d = prob_d + 0.40 * excess
+        prob_h = prob_h + 0.15 * excess
+
+    # Round to 4 decimal places after redistribution
+    prob_h = round(prob_h, 4)
+    prob_d = round(prob_d, 4)
+    prob_a = round(prob_a, 4)
 
     return prob_h, prob_d, prob_a, round(d_tactical, 2), round(rating_edge_h, 2), round(chaos, 2)
 
