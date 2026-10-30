@@ -4,7 +4,7 @@ scripts/compute_tactical_profiles_v2.py
 V2 Tactical Engine - Step 2 (Calibrated): Compute V2 Tactical Profiles from Raw Stats
 Reads aggregated records from Supabase table `team_raw_stats`,
 applies calibrated possession-normalized feature engineering (with clamped factors),
-anchors floor and ceiling in net open-play quality (npxG delta),
+assigns static quality baseline ratings (floor and ceiling constants),
 scales the 4 attacking and 4 defensive pillars onto a 0-100 percentile/min-max distribution,
 and upserts the result into `team_tactical_profiles_v2`.
 
@@ -49,7 +49,66 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ---------------------------------------------------------------------------
-# 2. Helper: Min-Max Scaler S(x) -> [0, 100]
+# 2. Canonical Quality Anchors (Static Baseline Ratings)
+# ---------------------------------------------------------------------------
+STATIC_QUALITY_ANCHORS: Dict[str, Dict[str, float]] = {
+    "Arsenal": {"floor": 75, "ceiling": 93},
+    "Aston Villa": {"floor": 49, "ceiling": 82},
+    "Bournemouth": {"floor": 47, "ceiling": 85},
+    "AFC Bournemouth": {"floor": 47, "ceiling": 85},
+    "Brentford": {"floor": 65, "ceiling": 85},
+    "Brighton": {"floor": 62, "ceiling": 87},
+    "Brighton & Hove Albion": {"floor": 62, "ceiling": 87},
+    "Brighton Hove": {"floor": 62, "ceiling": 87},
+    "Brighton and Hove Albion": {"floor": 62, "ceiling": 87},
+    "Chelsea": {"floor": 55, "ceiling": 89},
+    "Crystal Palace": {"floor": 52, "ceiling": 67},
+    "Everton": {"floor": 58, "ceiling": 67},
+    "Fulham": {"floor": 40, "ceiling": 63},
+    "Ipswich": {"floor": 35, "ceiling": 66},
+    "Ipswich Town": {"floor": 35, "ceiling": 66},
+    "Liverpool": {"floor": 63, "ceiling": 86},
+    "Manchester City": {"floor": 73, "ceiling": 95},
+    "Man City": {"floor": 73, "ceiling": 95},
+    "Manchester United": {"floor": 49, "ceiling": 77},
+    "Manchester Utd": {"floor": 49, "ceiling": 77},
+    "Man United": {"floor": 49, "ceiling": 77},
+    "Newcastle United": {"floor": 53, "ceiling": 76},
+    "Newcastle": {"floor": 53, "ceiling": 76},
+    "Nottingham Forest": {"floor": 50, "ceiling": 69},
+    "Nottingham": {"floor": 50, "ceiling": 69},
+    "Nott'm Forest": {"floor": 50, "ceiling": 69},
+    "Tottenham": {"floor": 44, "ceiling": 73},
+    "Tottenham Hotspur": {"floor": 44, "ceiling": 73},
+    "Spurs": {"floor": 44, "ceiling": 73},
+    "Hull": {"floor": 42, "ceiling": 64},
+    "Hull City": {"floor": 42, "ceiling": 64},
+    "Coventry": {"floor": 46, "ceiling": 67},
+    "Coventry City": {"floor": 46, "ceiling": 67},
+    "Leeds": {"floor": 64, "ceiling": 76},
+    "Leeds United": {"floor": 64, "ceiling": 76},
+    "Sunderland": {"floor": 48, "ceiling": 62},
+}
+
+
+def get_static_quality_anchors(team_name: str) -> Dict[str, float]:
+    """Retrieve static floor and ceiling anchors for a club."""
+    if team_name in STATIC_QUALITY_ANCHORS:
+        return STATIC_QUALITY_ANCHORS[team_name]
+
+    team_clean = team_name.strip().lower()
+    for key, val in STATIC_QUALITY_ANCHORS.items():
+        if key.lower() == team_clean:
+            return val
+
+    logger.warning(
+        f"No static quality anchors found for team '{team_name}'. Using default [50.0, 70.0]."
+    )
+    return {"floor": 50.0, "ceiling": 70.0}
+
+
+# ---------------------------------------------------------------------------
+# 3. Helper: Min-Max Scaler S(x) -> [0, 100]
 # ---------------------------------------------------------------------------
 def scale_0_100(series: pd.Series) -> pd.Series:
     """Min-max scale a series to 0-100 across all clubs."""
@@ -61,7 +120,7 @@ def scale_0_100(series: pd.Series) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-# 3. Tactical Profile Computation Engine (Calibrated)
+# 4. Tactical Profile Computation Engine (Calibrated)
 # ---------------------------------------------------------------------------
 def compute_tactical_profiles_v2() -> List[Dict[str, Any]]:
     logger.info("Reading raw team statistics from Supabase table 'team_raw_stats'...")
@@ -174,30 +233,18 @@ def compute_tactical_profiles_v2() -> List[Dict[str, Any]]:
     ).round(2)
 
     # -----------------------------------------------------------------------
-    # C. Anchor Floor & Ceiling in Net Performance (npxG Delta)
+    # C. Static Quality Anchors (Floor & Ceiling Baseline Ratings)
     # -----------------------------------------------------------------------
-    net_npxg_p90 = (df["npxg"].astype(float) - df["npxga"].astype(float)) / mp
-    net_quality_score = scale_0_100(net_npxg_p90)
-    s_npxg_p90 = scale_0_100(df["npxg"].astype(float) / mp)
+    floors = []
+    ceilings = []
+    for _, row in df.iterrows():
+        team_name = str(row["team"])
+        anchors = get_static_quality_anchors(team_name)
+        floors.append(float(anchors["floor"]))
+        ceilings.append(float(anchors["ceiling"]))
 
-    # floor = 0.50 * net_quality_score + 0.30 * (100 - S(npxga_p90)) + 0.20 * (P * 100)
-    floor = (
-        0.50 * net_quality_score
-        + 0.30 * (100.0 - s_npxga_p90)
-        + 0.20 * (p_raw * 100.0)
-    ).round(2)
-
-    # ceiling = 0.50 * net_quality_score + 0.35 * S(npxg_p90) + 0.15 * atk_central_penetration
-    ceiling = (
-        0.50 * net_quality_score
-        + 0.35 * s_npxg_p90
-        + 0.15 * atk_central_penetration
-    ).round(2)
-
-    # Guarantee ceiling >= floor + 5.0
-    for i in range(len(floor)):
-        if ceiling.iloc[i] < floor.iloc[i] + 5.0:
-            ceiling.iloc[i] = round(floor.iloc[i] + 5.0, 2)
+    floor = pd.Series(floors, index=df.index, dtype=float)
+    ceiling = pd.Series(ceilings, index=df.index, dtype=float)
 
     chaos_index = (
         0.40 * atk_perimeter_chaos
@@ -234,7 +281,7 @@ def compute_tactical_profiles_v2() -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# 4. Upsert into Supabase & Print Summary
+# 5. Upsert into Supabase & Print Summary
 # ---------------------------------------------------------------------------
 def main():
     print("=" * 80)
