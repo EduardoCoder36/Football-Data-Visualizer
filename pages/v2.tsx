@@ -304,15 +304,14 @@ export default function V2DashboardPage({
       const maxP = Math.max(m.prob_home, m.prob_draw, m.prob_away);
       const topPick = maxP === m.prob_home ? 'H' : maxP === m.prob_away ? 'A' : 'D';
 
-      const sorted = [
-        { code: 'H', p: m.prob_home },
-        { code: 'D', p: m.prob_draw },
-        { code: 'A', p: m.prob_away },
-      ].sort((a, b) => b.p - a.p);
-      const secondPick = sorted[1]?.code;
-
+      // Strict Double Chance logic
       const isHit = topPick === actual;
-      const isDc = isHit || actual === 'D' || actual === secondPick;
+      const isDoubleChanceHit = !isHit && (
+        (topPick === 'H' && actual === 'D') ||
+        (topPick === 'A' && actual === 'D') ||
+        (topPick === 'D' && (actual === 'H' || actual === 'A'))
+      );
+      const isDc = isHit || isDoubleChanceHit;
 
       if (isHit) hits++;
       if (isDc) doubleChanceHits++;

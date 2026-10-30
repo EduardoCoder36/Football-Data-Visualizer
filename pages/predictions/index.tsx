@@ -85,16 +85,12 @@ export default function PredictionsPage({ predictions }: PredictionsPageProps) {
             const favoredCode = m.favored === 'Home' ? 'H' : (m.favored === 'Away' ? 'A' : (m.favored === 'Draw' ? 'D' : ''));
             const isHit = favoredCode === m.actual_result;
 
-            const pHome = Number(m.prob_home ?? 0);
-            const pDraw = Number(m.prob_draw ?? 0);
-            const pAway = Number(m.prob_away ?? 0);
-            const sorted = [
-                { code: 'H', p: pHome },
-                { code: 'D', p: pDraw },
-                { code: 'A', p: pAway },
-            ].sort((a, b) => b.p - a.p);
-            const secondPick = sorted[1]?.code;
-            const isDc = isHit || m.actual_result === 'D' || m.actual_result === secondPick;
+            const isDoubleChance = !isHit && (
+                (favoredCode === 'H' && m.actual_result === 'D') ||
+                (favoredCode === 'A' && m.actual_result === 'D') ||
+                (favoredCode === 'D' && (m.actual_result === 'H' || m.actual_result === 'A'))
+            );
+            const isDc = isHit || isDoubleChance;
 
             if (isHit) hits++;
             if (isDc) doubleChanceHits++;

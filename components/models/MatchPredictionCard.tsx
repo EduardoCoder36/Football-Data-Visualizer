@@ -44,14 +44,12 @@ export default function MatchPredictionCard({ match }: { match: MatchPrediction 
     if (isCompleted && match.actual_result) {
         const isHit = favoredCode === match.actual_result;
         
-        // Double chance check: actual was draw or actual was secondary highest probability
-        const sortedProbs = [
-            { code: 'H', p: pHome },
-            { code: 'D', p: pDraw },
-            { code: 'A', p: pAway },
-        ].sort((a, b) => b.p - a.p);
-        const secondPick = sortedProbs[1]?.code;
-        const isDoubleChance = !isHit && (match.actual_result === 'D' || match.actual_result === secondPick);
+        // Strict Double Chance logic against primary pick
+        const isDoubleChance = !isHit && (
+            (favoredCode === 'H' && match.actual_result === 'D') ||
+            (favoredCode === 'A' && match.actual_result === 'D') ||
+            (favoredCode === 'D' && (match.actual_result === 'H' || match.actual_result === 'A'))
+        );
 
         if (isHit) {
             outcomeBadge = {

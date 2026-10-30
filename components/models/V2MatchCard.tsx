@@ -132,23 +132,20 @@ export default function V2MatchCard({
     else if (match.home_score === match.away_score) actualResult = 'D';
     else actualResult = 'A';
 
-    const isHit = v2FavoredCode === actualResult;
+    // Strict Double Chance logic against the active model's primary pick
+    const isDirectHit = v2FavoredCode === actualResult;
+    const isDoubleChanceHit = !isDirectHit && (
+      (v2FavoredCode === 'H' && actualResult === 'D') ||
+      (v2FavoredCode === 'A' && actualResult === 'D') ||
+      (v2FavoredCode === 'D' && (actualResult === 'H' || actualResult === 'A'))
+    );
 
-    // Double chance: top 2 outcomes
-    const sortedOutcomes = [
-      { code: 'H', p: match.prob_home },
-      { code: 'D', p: match.prob_draw },
-      { code: 'A', p: match.prob_away },
-    ].sort((a, b) => b.p - a.p);
-    const secondPick = sortedOutcomes[1]?.code;
-    const isDoubleChance = !isHit && (actualResult === 'D' || actualResult === secondPick);
-
-    if (isHit) {
+    if (isDirectHit) {
       outcomeBadge = {
         label: '✓ Top Pick Hit',
         style: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
       };
-    } else if (isDoubleChance) {
+    } else if (isDoubleChanceHit) {
       outcomeBadge = {
         label: '½ Double Chance Hit',
         style: 'bg-amber-500/20 text-amber-400 border-amber-500/40',
