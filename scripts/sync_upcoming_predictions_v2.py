@@ -390,12 +390,24 @@ def compute_match_probabilities(
 # ---------------------------------------------------------------------------
 # 4. Pipeline Execution
 # ---------------------------------------------------------------------------
-def sync_predictions_v2():
-    logger.info("Syncing all competition fixtures into 'all_fixtures_schedule'...")
-    all_records = sync_all_fixtures_schedule()
-    rest_history = build_all_competition_match_history(all_records)
+def sync_predictions_v2(sync_cups: bool = False):
+    if sync_cups:
+        try:
+            from scripts.sync_cups_and_europe import sync_cups_and_europe
+            logger.info("Invoking cup and European fixture sync...")
+            sync_cups_and_europe()
+        except Exception as e:
+            logger.warning(f"Optional cup sync failed: {e}")
 
-    pl_matches = [r for r in all_records if r.get("competition_code") == "PL"]
+    logger.info("Syncing Premier League & Champions League fixtures...")
+    pl_cl_records = sync_all_fixtures_schedule()
+
+    logger.info("Loading complete multi-competition schedule from 'all_fixtures_schedule'...")
+    sched_res = supabase.table("all_fixtures_schedule").select("*").execute()
+    all_schedule = sched_res.data if sched_res.data else pl_cl_records
+    rest_history = build_all_competition_match_history(all_schedule)
+
+    pl_matches = [r for r in pl_cl_records if r.get("competition_code") == "PL"]
     team_history = build_team_match_history(pl_matches)
 
     logger.info("Loading V2 tactical profiles from Supabase 'team_tactical_profiles_v2'...")
@@ -514,7 +526,8 @@ def main():
     print("=" * 90)
     print("V2 Tactical Engine - Step 4: Multi-Pillar Match Prediction Engine")
     print("=" * 90)
-    sync_predictions_v2()
+    sync_cups = "--sync-cups" in sys.argv
+    sync_predictions_v2(sync_cups=sync_cups)
 
 
 if __name__ == "__main__":

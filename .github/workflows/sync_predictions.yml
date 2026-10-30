@@ -1,0 +1,43 @@
+name: Synchronize Cup, European & Match Predictions V2
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs at 04:00 UTC every other day (every 2 days)
+    - cron: '0 4 */2 * *'
+
+jobs:
+  sync-all-predictions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests supabase python-dotenv pandas numpy
+
+      - name: Step 1 - Sync Cups & European Fixtures (API-Football)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          python scripts/sync_cups_and_europe.py
+
+      - name: Step 2 - Sync Predictions & Multi-Competition Fatigue Modifiers
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: |
+          python scripts/sync_upcoming_predictions_v2.py
+
