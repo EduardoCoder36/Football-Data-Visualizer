@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import TeamSelectorBar, { TeamOption } from "../components/analytics/TeamSelectorBar";
 import TrajectoryChart, { TrajectoryDataRow, ViewMode } from "../components/analytics/TrajectoryChart";
 import FixtureResultsTable from "../components/analytics/FixtureResultsTable";
+import { deriveSeasonPairFromDate, getSeasonPair } from "../services/teamMetricsService";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,24 +12,29 @@ const supabase = createClient(
 );
 
 const ARSENAL_ID = 57;
-const CURRENT_SEASON = "2026/2027";
 
 export default function VisualizerPage() {
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [trajectories, setTrajectories] = useState<TrajectoryDataRow[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([ARSENAL_ID]);
   const [viewMode, setViewMode] = useState<ViewMode>("comparison");
+  const [activeSeason, setActiveSeason] = useState<string>(
+    () => deriveSeasonPairFromDate().currentSeason
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       setLoading(true);
 
+      const { currentSeason } = await getSeasonPair(supabase);
+      setActiveSeason(currentSeason);
+
       // 1. Identify active clubs in the current campaign
       const { data: activeFixtures } = await supabase
         .from("fixtures")
         .select("home_team_id")
-        .eq("season", CURRENT_SEASON);
+        .eq("season", currentSeason);
 
       const activeTeamIds = new Set((activeFixtures || []).map((f) => f.home_team_id));
 
@@ -137,7 +143,7 @@ export default function VisualizerPage() {
         {/* Fixture Results Table Section */}
         <div className="w-full mt-2 pb-12 px-4 border-t border-slate-900 pt-6">
           {selectedTeamIds.length === 1 ? (
-            <FixtureResultsTable teamId={selectedTeamIds[0]} season={CURRENT_SEASON} />
+            <FixtureResultsTable teamId={selectedTeamIds[0]} season={activeSeason} />
           ) : (
             <div className="w-full max-w-3xl mx-auto bg-slate-900/50 border border-slate-800 rounded-xl p-8 text-center shadow-sm">
               <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">

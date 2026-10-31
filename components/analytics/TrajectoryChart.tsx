@@ -78,6 +78,11 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
   const [teamMetrics, setTeamMetrics] = useState<TeamMetricPoint[]>([]);
   const [metricsLoading, setMetricsLoading] = useState<boolean>(false);
 
+  // Baseline comparison layer toggles in Team Metrics mode
+  const [showCurrentProgress, setShowCurrentProgress] = useState<boolean>(true);
+  const [showLastYearPace, setShowLastYearPace] = useState<boolean>(false);
+  const [showSameOpponents, setShowSameOpponents] = useState<boolean>(false);
+
   // Current primary single team (for Team Metrics mode)
   const primaryTeamId = selectedTeamIds[0] ?? teams[0]?.id ?? 57;
   const primaryTeam = useMemo(
@@ -232,21 +237,53 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
   // ---------------------------------------------------------------------------
   // 2. Team Metrics Mode Chart Data & Scales
   // ---------------------------------------------------------------------------
+  const completedTeamMetricsCount = useMemo(
+    () => teamMetrics.filter((pt) => pt.is_completed).length,
+    [teamMetrics]
+  );
+
   const { maxTeamMetricsGamesPlayed, maxTeamMetricsValue } = useMemo(() => {
-    let maxGP = teamMetrics.length > 0 ? teamMetrics[teamMetrics.length - 1].gameweek : 1;
+    const maxGP = completedTeamMetricsCount > 0 ? completedTeamMetricsCount : 1;
+    const maxVisibleGW = isZoomed ? Math.max(5, Math.min(38, maxGP + 1)) : 38;
     let maxVal = 5;
 
     teamMetrics.forEach((pt) => {
+      if (pt.gameweek > maxVisibleGW) return;
+
       activeMetricKeys.forEach((key) => {
-        const val = pt[key];
-        if (typeof val === "number" && val > maxVal) {
-          maxVal = val;
+        if (showCurrentProgress) {
+          const val = pt[key];
+          if (typeof val === "number" && val > maxVal) {
+            maxVal = val;
+          }
+        }
+        if (showLastYearPace) {
+          const baseKey = `${key}_baseline` as keyof TeamMetricPoint;
+          const baseVal = pt[baseKey];
+          if (typeof baseVal === "number" && baseVal > maxVal) {
+            maxVal = baseVal;
+          }
+        }
+        if (showSameOpponents) {
+          const eqKey = `${key}_same_opp` as keyof TeamMetricPoint;
+          const eqVal = pt[eqKey];
+          if (typeof eqVal === "number" && eqVal > maxVal) {
+            maxVal = eqVal;
+          }
         }
       });
     });
 
     return { maxTeamMetricsGamesPlayed: maxGP, maxTeamMetricsValue: maxVal };
-  }, [teamMetrics, activeMetricKeys]);
+  }, [
+    teamMetrics,
+    completedTeamMetricsCount,
+    isZoomed,
+    activeMetricKeys,
+    showCurrentProgress,
+    showLastYearPace,
+    showSameOpponents,
+  ]);
 
   const teamMetricsChartData = useMemo(() => {
     const slots: any[] = Array.from({ length: 38 }, (_, i) => ({
@@ -376,6 +413,64 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
               </div>
             </div>
 
+            {/* Comparison Baseline Layer Checkboxes */}
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span className="text-slate-400 font-semibold">Baselines:</span>
+              <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-200 cursor-pointer select-none hover:border-slate-600 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={showCurrentProgress}
+                  onChange={(e) => setShowCurrentProgress(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded accent-emerald-500 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                />
+                <span className="font-medium">Current Progress</span>
+              </label>
+
+              <label
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-200 select-none transition-colors ${
+                  primaryTeam?.isPromoted
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer hover:border-slate-600"
+                }`}
+                title={
+                  primaryTeam?.isPromoted
+                    ? "Promoted club has no prior Premier League baseline"
+                    : "Same Gameweek Stage in previous season"
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={showLastYearPace && !primaryTeam?.isPromoted}
+                  disabled={Boolean(primaryTeam?.isPromoted)}
+                  onChange={(e) => setShowLastYearPace(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded accent-emerald-500 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <span className="font-medium">Last Year&apos;s Pace</span>
+              </label>
+
+              <label
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-200 select-none transition-colors ${
+                  primaryTeam?.isPromoted
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer hover:border-slate-600"
+                }`}
+                title={
+                  primaryTeam?.isPromoted
+                    ? "Promoted club has no prior Premier League baseline"
+                    : "Equivalent Opponents in previous season via relegated_replacements"
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={showSameOpponents && !primaryTeam?.isPromoted}
+                  disabled={Boolean(primaryTeam?.isPromoted)}
+                  onChange={(e) => setShowSameOpponents(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded accent-emerald-500 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <span className="font-medium">Same Opponents</span>
+              </label>
+            </div>
+
             {/* Quick Series Actions */}
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <button
@@ -406,35 +501,33 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
 
       {/* Legend & Summary Sub-Header */}
       <div className="flex flex-wrap gap-4 items-center justify-between pb-3 text-xs text-slate-400 border-b border-slate-900 mb-2">
-        {viewMode === "comparison" ? (
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-0.5 bg-slate-200 inline-block"></span>
-              <span>Current Progress</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-0.5 border-t-2 border-dashed border-slate-400 inline-block"></span>
-              <span>Last Year's Pace</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 h-0.5 border-t-2 border-dotted border-slate-400 inline-block"></span>
-              <span>Same Opponents</span>
-            </div>
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-0.5 bg-slate-200 inline-block"></span>
+            <span>Current Progress</span>
           </div>
-        ) : (
-          <div className="flex items-center gap-2 text-slate-400">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-0.5 border-t-2 border-dashed border-slate-400 inline-block"></span>
+            <span>Last Year&apos;s Pace</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-0.5 border-t-2 border-dotted border-slate-400 inline-block"></span>
+            <span>Same Opponents</span>
+          </div>
+        </div>
+
+        {viewMode === "team_metrics" && (
+          <div className="flex flex-wrap items-center gap-2 text-slate-400 text-[11px]">
             <span className="font-semibold text-slate-200">{primaryTeam?.name}</span>
             <span>•</span>
             <span>
-              Cumulative telemetry across {teamMetrics.length} completed fixtures from{" "}
+              {completedTeamMetricsCount} completed fixtures from{" "}
               <code className="text-emerald-400 font-mono text-[11px]">match_raw_stats</code>
             </span>
-          </div>
-        )}
-
-        {viewMode === "team_metrics" && (
-          <div className="text-slate-500 italic text-[11px]">
-            {activeMetricKeys.length} series active
+            <span>•</span>
+            <span className="text-slate-500 italic">
+              {activeMetricKeys.length} series active
+            </span>
           </div>
         )}
       </div>
@@ -450,10 +543,22 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
           </div>
         ) : null}
 
-        {viewMode === "team_metrics" && activeMetricKeys.length === 0 ? (
+        {viewMode === "team_metrics" &&
+        (activeMetricKeys.length === 0 ||
+          (!showCurrentProgress &&
+            (!showLastYearPace || primaryTeam?.isPromoted) &&
+            (!showSameOpponents || primaryTeam?.isPromoted))) ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-500">
-            <p className="text-base font-medium text-slate-400 mb-1">No metrics active</p>
-            <p className="text-xs">Click one or more chips above to render data lines on the chart.</p>
+            <p className="text-base font-medium text-slate-400 mb-1">
+              {activeMetricKeys.length === 0
+                ? "No metrics active"
+                : "No comparison baseline selected"}
+            </p>
+            <p className="text-xs">
+              {activeMetricKeys.length === 0
+                ? "Click one or more chips above to render data lines on the chart."
+                : "Check at least one baseline toggle above (e.g. Current Progress) to display curves."}
+            </p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -610,22 +715,32 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
                     if (active && payload && payload.length) {
                       const pointData = payload[0]?.payload as TeamMetricPoint | undefined;
                       return (
-                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl z-50 min-w-[210px]">
-                          <div className="border-b border-slate-800 pb-2 mb-2">
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 shadow-2xl z-50 min-w-[240px]">
+                          <div className="border-b border-slate-800 pb-2 mb-2 flex flex-col gap-0.5">
                             <p className="text-slate-200 font-bold text-xs uppercase tracking-wider">
                               Matchday {label}
                             </p>
                             {pointData?.score_display && (
-                              <p className="text-xs font-semibold text-emerald-400 mt-0.5">
-                                {pointData.score_display}
+                              <p className="text-xs font-semibold text-emerald-400">
+                                Current: {pointData.score_display}
+                              </p>
+                            )}
+                            {showLastYearPace && pointData?.baseline_score_display && (
+                              <p className="text-[11px] text-slate-400">
+                                Last Year GW {label}: {pointData.baseline_score_display}
+                              </p>
+                            )}
+                            {showSameOpponents && pointData?.same_opp_score_display && (
+                              <p className="text-[11px] text-slate-400">
+                                Opponents Eq.: {pointData.same_opp_score_display}
                               </p>
                             )}
                           </div>
                           <div className="flex flex-col gap-1.5">
                             {payload.map((entry: any, index: number) => {
-                              const chip = TEAM_METRIC_CHIPS.find(
-                                (c) => c.key === entry.dataKey
-                              );
+                              const rawKey = String(entry.dataKey || "");
+                              const baseKey = rawKey.replace(/(_baseline|_same_opp)$/, "");
+                              const chip = TEAM_METRIC_CHIPS.find((c) => c.key === baseKey);
                               const formattedVal = chip?.isFloat
                                 ? Number(entry.value).toFixed(2)
                                 : entry.value;
@@ -663,22 +778,52 @@ export const TrajectoryChart: React.FC<TrajectoryChartProps> = ({
                 {TEAM_METRIC_CHIPS.filter((chip) =>
                   activeMetricKeys.includes(chip.key)
                 ).map((chip) => (
-                  <Line
-                    key={chip.key}
-                    type="monotone"
-                    dataKey={chip.key}
-                    name={chip.label}
-                    stroke={chip.color}
-                    strokeWidth={2.5}
-                    dot={{
-                      r: 4,
-                      fill: chip.color,
-                      stroke: "#0f172a",
-                      strokeWidth: 1.5,
-                    }}
-                    activeDot={{ r: 6, stroke: "#ffffff", strokeWidth: 2 }}
-                    connectNulls
-                  />
+                  <React.Fragment key={chip.key}>
+                    {showCurrentProgress && (
+                      <Line
+                        type="monotone"
+                        dataKey={chip.key}
+                        name={`${chip.label} (Current)`}
+                        stroke={chip.color}
+                        strokeWidth={2.5}
+                        strokeDasharray="0"
+                        dot={{
+                          r: 4,
+                          fill: chip.color,
+                          stroke: "#0f172a",
+                          strokeWidth: 1.5,
+                        }}
+                        activeDot={{ r: 6, stroke: "#ffffff", strokeWidth: 2 }}
+                        connectNulls
+                      />
+                    )}
+                    {showLastYearPace && !primaryTeam?.isPromoted && (
+                      <Line
+                        type="monotone"
+                        dataKey={`${chip.key}_baseline`}
+                        name={`${chip.label} (Last Year)`}
+                        stroke={chip.color}
+                        strokeWidth={1.5}
+                        strokeDasharray="5 5"
+                        strokeOpacity={0.75}
+                        dot={{ r: 2, fill: chip.color }}
+                        connectNulls
+                      />
+                    )}
+                    {showSameOpponents && !primaryTeam?.isPromoted && (
+                      <Line
+                        type="monotone"
+                        dataKey={`${chip.key}_same_opp`}
+                        name={`${chip.label} (Opponents Eq.)`}
+                        stroke={chip.color}
+                        strokeWidth={1.5}
+                        strokeDasharray="2 2"
+                        strokeOpacity={0.65}
+                        dot={{ r: 2, fill: chip.color }}
+                        connectNulls
+                      />
+                    )}
+                  </React.Fragment>
                 ))}
               </LineChart>
             )}
