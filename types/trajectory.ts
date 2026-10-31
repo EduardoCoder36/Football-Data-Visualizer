@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const MetricTypeSchema = z.enum(['PTS', 'GF', 'GA', 'COMBINED']);
+export const MetricTypeSchema = z.enum(['PTS', 'GF', 'GA']);
 export type MetricType = z.infer<typeof MetricTypeSchema>;
 
 export const TrajectoryPointSchema = z.object({

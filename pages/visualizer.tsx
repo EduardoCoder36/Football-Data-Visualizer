@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import TeamSelectorBar, { TeamOption } from "../components/analytics/TeamSelectorBar";
-import TrajectoryChart, { TrajectoryDataRow } from "../components/analytics/TrajectoryChart";
+import TrajectoryChart, { TrajectoryDataRow, ViewMode } from "../components/analytics/TrajectoryChart";
 import FixtureResultsTable from "../components/analytics/FixtureResultsTable";
 
 const supabase = createClient(
@@ -17,6 +17,7 @@ export default function VisualizerPage() {
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [trajectories, setTrajectories] = useState<TrajectoryDataRow[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([ARSENAL_ID]);
+  const [viewMode, setViewMode] = useState<ViewMode>("comparison");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -83,6 +84,10 @@ export default function VisualizerPage() {
     });
   };
 
+  const handleSelectSingleTeam = (teamId: number) => {
+    setSelectedTeamIds([teamId]);
+  };
+
   if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-950 text-slate-400">
@@ -110,18 +115,25 @@ export default function VisualizerPage() {
         </div>
       </div>
 
-      <TeamSelectorBar
-        teams={teams}
-        selectedTeamIds={selectedTeamIds}
-        onToggleTeam={handleToggleTeam}
-      />
+      {/* Multi-Team Selector Bar (Shown in Comparison Mode) */}
+      {viewMode === "comparison" && (
+        <TeamSelectorBar
+          teams={teams}
+          selectedTeamIds={selectedTeamIds}
+          onToggleTeam={handleToggleTeam}
+        />
+      )}
+
       <div className="flex-1 w-full overflow-y-auto">
         <TrajectoryChart
           teams={teams}
           selectedTeamIds={selectedTeamIds}
           trajectories={trajectories}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onSelectSingleTeam={handleSelectSingleTeam}
         />
-        
+
         {/* Fixture Results Table Section */}
         <div className="w-full mt-2 pb-12 px-4 border-t border-slate-900 pt-6">
           {selectedTeamIds.length === 1 ? (
@@ -135,7 +147,7 @@ export default function VisualizerPage() {
               </div>
               <h3 className="text-lg font-medium text-slate-200 mb-2">Select a single team</h3>
               <p className="text-slate-400 text-sm max-w-md mx-auto">
-                Select exactly one team in the top bar to view match-by-match results, score breakdowns, and prior-season equivalents.
+                Select exactly one team to view match-by-match results, score breakdowns, and prior-season equivalents.
               </p>
             </div>
           )}

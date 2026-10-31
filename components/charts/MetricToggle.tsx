@@ -11,7 +11,6 @@ export const MetricToggle: React.FC<MetricToggleProps> = ({ selectedMetric, onCh
     { value: 'PTS', label: 'Points (PTS)' },
     { value: 'GF', label: 'Goals Scored (GF)' },
     { value: 'GA', label: 'Goals Conceded (GA)' },
-    { value: 'COMBINED', label: 'Goals Combined (GF & GA)' },
   ];
 
   return (

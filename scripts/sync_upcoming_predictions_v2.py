@@ -390,14 +390,28 @@ def compute_match_probabilities(
 # ---------------------------------------------------------------------------
 # 4. Pipeline Execution
 # ---------------------------------------------------------------------------
-def sync_predictions_v2(sync_cups: bool = False):
+def sync_predictions_v2(sync_cups: bool = False, sync_stats: bool = False):
     if sync_cups:
         try:
-            from scripts.sync_cups_and_europe import sync_cups_and_europe
+            try:
+                from scripts.sync_cups_and_europe import sync_cups_and_europe
+            except ImportError:
+                from sync_cups_and_europe import sync_cups_and_europe
             logger.info("Invoking cup and European fixture sync...")
             sync_cups_and_europe()
         except Exception as e:
             logger.warning(f"Optional cup sync failed: {e}")
+
+    if sync_stats or sync_cups:
+        try:
+            try:
+                from scripts.sync_match_raw_stats import sync_match_raw_stats
+            except ImportError:
+                from sync_match_raw_stats import sync_match_raw_stats
+            logger.info("Invoking per-match raw stats sync...")
+            sync_match_raw_stats()
+        except Exception as e:
+            logger.warning(f"Optional raw stats sync failed: {e}")
 
     logger.info("Syncing Premier League & Champions League fixtures...")
     pl_cl_records = sync_all_fixtures_schedule()
@@ -527,7 +541,8 @@ def main():
     print("V2 Tactical Engine - Step 4: Multi-Pillar Match Prediction Engine")
     print("=" * 90)
     sync_cups = "--sync-cups" in sys.argv
-    sync_predictions_v2(sync_cups=sync_cups)
+    sync_stats = "--sync-stats" in sys.argv
+    sync_predictions_v2(sync_cups=sync_cups, sync_stats=sync_stats)
 
 
 if __name__ == "__main__":
