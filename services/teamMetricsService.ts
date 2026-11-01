@@ -19,6 +19,9 @@ export interface TeamMetricPoint {
   match_xg: number | null;
   match_axg: number | null;
   match_points: number | null;
+  match_shots_on_target: number | null;
+  match_shots_off_target: number | null;
+  match_corners: number | null;
   // Current Progress (Cumulative)
   cum_xg: number | null;
   cum_axg: number | null;
@@ -58,8 +61,19 @@ export type TeamMetricKey =
   | 'cum_shots_off_target'
   | 'cum_corners';
 
+export type TeamMatchMetricKey =
+  | 'match_xg'
+  | 'match_axg'
+  | 'match_goals'
+  | 'match_conceded'
+  | 'match_points'
+  | 'match_shots_on_target'
+  | 'match_shots_off_target'
+  | 'match_corners';
+
 export interface MetricChipConfig {
   key: TeamMetricKey;
+  matchKey: TeamMatchMetricKey;
   label: string;
   shortLabel: string;
   color: string;
@@ -68,14 +82,14 @@ export interface MetricChipConfig {
 }
 
 export const TEAM_METRIC_CHIPS: MetricChipConfig[] = [
-  { key: 'cum_xg', label: 'Cum. xG', shortLabel: 'xG', color: '#10b981', unit: 'xG', isFloat: true },
-  { key: 'cum_axg', label: 'Cum. aXG', shortLabel: 'aXG', color: '#f43f5e', unit: 'aXG', isFloat: true },
-  { key: 'cum_goals', label: 'Goals Scored', shortLabel: 'GF', color: '#0ea5e9', unit: 'goals' },
-  { key: 'cum_conceded', label: 'Goals Conceded', shortLabel: 'GA', color: '#f59e0b', unit: 'goals' },
-  { key: 'cum_points', label: 'Points', shortLabel: 'PTS', color: '#8b5cf6', unit: 'pts' },
-  { key: 'cum_shots_on_target', label: 'Shots on Target', shortLabel: 'SoT', color: '#06b6d4', unit: 'shots' },
-  { key: 'cum_shots_off_target', label: 'Shots Off Target', shortLabel: 'Off Target', color: '#64748b', unit: 'shots' },
-  { key: 'cum_corners', label: 'Corners', shortLabel: 'Corners', color: '#eab308', unit: 'corners' },
+  { key: 'cum_xg', matchKey: 'match_xg', label: 'Cum. xG', shortLabel: 'xG', color: '#10b981', unit: 'xG', isFloat: true },
+  { key: 'cum_axg', matchKey: 'match_axg', label: 'Cum. aXG', shortLabel: 'aXG', color: '#f43f5e', unit: 'aXG', isFloat: true },
+  { key: 'cum_goals', matchKey: 'match_goals', label: 'Goals Scored', shortLabel: 'GF', color: '#0ea5e9', unit: 'goals' },
+  { key: 'cum_conceded', matchKey: 'match_conceded', label: 'Goals Conceded', shortLabel: 'GA', color: '#f59e0b', unit: 'goals' },
+  { key: 'cum_points', matchKey: 'match_points', label: 'Points', shortLabel: 'PTS', color: '#8b5cf6', unit: 'pts' },
+  { key: 'cum_shots_on_target', matchKey: 'match_shots_on_target', label: 'Shots on Target', shortLabel: 'SoT', color: '#06b6d4', unit: 'shots' },
+  { key: 'cum_shots_off_target', matchKey: 'match_shots_off_target', label: 'Shots Off Target', shortLabel: 'Off Target', color: '#64748b', unit: 'shots' },
+  { key: 'cum_corners', matchKey: 'match_corners', label: 'Corners', shortLabel: 'Corners', color: '#eab308', unit: 'corners' },
 ];
 
 export const DEFAULT_ACTIVE_METRICS: TeamMetricKey[] = ['cum_xg', 'cum_goals', 'cum_points'];
@@ -412,6 +426,9 @@ export async function fetchTeamMetrics(
       match_xg: cur ? cur.xg : null,
       match_axg: cur ? cur.axg : null,
       match_points: cur ? cur.points : null,
+      match_shots_on_target: cur ? cur.shots_on_target : null,
+      match_shots_off_target: cur ? cur.shots_off_target : null,
+      match_corners: cur ? cur.corners : null,
       // Current Progress
       cum_xg: hasCur ? curXg : null,
       cum_axg: hasCur ? curAxg : null,
@@ -444,4 +461,3 @@ export async function fetchTeamMetrics(
 
   return points;
 }
-

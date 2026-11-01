@@ -1,27 +1,51 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
 import TeamSelectorBar, { TeamOption } from "../components/analytics/TeamSelectorBar";
 import TrajectoryChart, { TrajectoryDataRow, ViewMode } from "../components/analytics/TrajectoryChart";
 import FixtureResultsTable from "../components/analytics/FixtureResultsTable";
 import { deriveSeasonPairFromDate, getSeasonPair } from "../services/teamMetricsService";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "../lib/supabaseClient";
 
 const ARSENAL_ID = 57;
+const MAX_COMPARISON_TEAMS = 2;
 
 export default function VisualizerPage() {
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [trajectories, setTrajectories] = useState<TrajectoryDataRow[]>([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([ARSENAL_ID]);
   const [viewMode, setViewMode] = useState<ViewMode>("comparison");
+  const [maxSelectionError, setMaxSelectionError] = useState<string | null>(null);
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeSeason, setActiveSeason] = useState<string>(
     () => deriveSeasonPairFromDate().currentSeason
   );
   const [loading, setLoading] = useState(true);
+
+  const triggerSelectionError = (msg: string) => {
+    setMaxSelectionError(msg);
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+    errorTimeoutRef.current = setTimeout(() => {
+      setMaxSelectionError(null);
+    }, 3500);
+  };
+
+  const clearSelectionError = () => {
+    setMaxSelectionError(null);
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -78,19 +102,41 @@ export default function VisualizerPage() {
     loadData();
   }, []);
 
+  const handleViewModeChange = (mode: ViewMode) => {
+    clearSelectionError();
+    setViewMode(mode);
+    if (mode === "team_metrics" && selectedTeamIds.length > 1) {
+      setSelectedTeamIds([selectedTeamIds[0]]);
+    }
+  };
+
   const handleToggleTeam = (teamId: number) => {
-    setSelectedTeamIds((prev) => {
-      if (prev.includes(teamId)) {
-        if (prev.length === 1) return prev;
-        return prev.filter((id) => id !== teamId);
-      } else {
-        if (prev.length >= 4) return prev;
-        return [...prev, teamId];
+    if (viewMode === "team_metrics") {
+      // Single-team exclusive mode: clicking a new team deselects the existing team immediately
+      clearSelectionError();
+      setSelectedTeamIds([teamId]);
+      return;
+    }
+
+    // Team Comparison mode (capped at 2 teams)
+    if (selectedTeamIds.includes(teamId)) {
+      clearSelectionError();
+      if (selectedTeamIds.length === 1) return;
+      setSelectedTeamIds((prev) => prev.filter((id) => id !== teamId));
+    } else {
+      if (selectedTeamIds.length >= MAX_COMPARISON_TEAMS) {
+        triggerSelectionError(
+          "Maximum of 2 teams can be selected. Please deselect an existing team first."
+        );
+        return;
       }
-    });
+      clearSelectionError();
+      setSelectedTeamIds((prev) => [...prev, teamId]);
+    }
   };
 
   const handleSelectSingleTeam = (teamId: number) => {
+    clearSelectionError();
     setSelectedTeamIds([teamId]);
   };
 
@@ -121,14 +167,15 @@ export default function VisualizerPage() {
         </div>
       </div>
 
-      {/* Multi-Team Selector Bar (Shown in Comparison Mode) */}
-      {viewMode === "comparison" && (
-        <TeamSelectorBar
-          teams={teams}
-          selectedTeamIds={selectedTeamIds}
-          onToggleTeam={handleToggleTeam}
-        />
-      )}
+      {/* Unified Team Selector Bar (Shown in both Comparison and Team Metrics modes) */}
+      <TeamSelectorBar
+        teams={teams}
+        selectedTeamIds={selectedTeamIds}
+        onToggleTeam={handleToggleTeam}
+        viewMode={viewMode}
+        maxSelectionError={maxSelectionError}
+        onDismissError={clearSelectionError}
+      />
 
       <div className="flex-1 w-full overflow-y-auto">
         <TrajectoryChart
@@ -136,7 +183,7 @@ export default function VisualizerPage() {
           selectedTeamIds={selectedTeamIds}
           trajectories={trajectories}
           viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          onViewModeChange={handleViewModeChange}
           onSelectSingleTeam={handleSelectSingleTeam}
         />
 
