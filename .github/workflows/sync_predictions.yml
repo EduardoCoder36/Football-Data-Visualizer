@@ -3,8 +3,8 @@ name: Synchronize Cup, European & Match Predictions V2
 on:
   workflow_dispatch:
   schedule:
-    # Runs at 04:00 UTC every other day (every 2 days)
-    - cron: '0 4 */2 * *'
+    # Runs at 04:00 UTC every day
+    - cron: '0 4 * *'
 
 jobs:
   sync-all-predictions:
