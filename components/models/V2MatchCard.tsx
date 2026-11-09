@@ -62,6 +62,107 @@ interface V2MatchCardProps {
   showComparison?: boolean;
 }
 
+function FootballSlot({ active, team }: { active: boolean; team: 'home' | 'away' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`w-3.5 h-3.5 transition-all duration-300 ${
+        active
+          ? team === 'home'
+            ? 'text-emerald-400 fill-emerald-400/25 drop-shadow-[0_0_6px_rgba(52,211,153,0.7)] scale-110'
+            : 'text-sky-400 fill-sky-400/25 drop-shadow-[0_0_6px_rgba(56,189,248,0.7)] scale-110'
+          : 'text-zinc-700 opacity-25'
+      }`}
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polygon
+        points="12,7 16,10 14.5,15 9.5,15 8,10"
+        fill="currentColor"
+        fillOpacity={active ? 0.35 : 0.15}
+      />
+      <line x1="12" y1="7" x2="12" y2="2" />
+      <line x1="16" y1="10" x2="20.5" y2="7.5" />
+      <line x1="14.5" y1="15" x2="18.2" y2="19.5" />
+      <line x1="9.5" y1="15" x2="5.8" y2="19.5" />
+      <line x1="8" y1="10" x2="3.5" y2="7.5" />
+    </svg>
+  );
+}
+
+function MomentumMeter({
+  netDelta,
+  homeTeam,
+  awayTeam,
+  pillarName,
+}: {
+  netDelta: number;
+  homeTeam: string;
+  awayTeam: string;
+  pillarName: string;
+}) {
+  const absDelta = Math.abs(netDelta);
+  let intensity = 0;
+  if (absDelta < 5) {
+    intensity = 0;
+  } else if (absDelta < 15) {
+    intensity = 1;
+  } else if (absDelta < 25) {
+    intensity = 2;
+  } else if (absDelta < 35) {
+    intensity = 3;
+  } else if (absDelta < 50) {
+    intensity = 4;
+  } else {
+    intensity = 5;
+  }
+
+  const edge: 'home' | 'away' | 'neutral' =
+    intensity === 0 || netDelta === 0 ? 'neutral' : netDelta > 0 ? 'home' : 'away';
+
+  // Home slots (5): indices 0 to 4 (left to right, 4 is nearest center divider)
+  // Expand outward from divider: (4 - i) < intensity
+  const homeSlots = [0, 1, 2, 3, 4].map((i) => {
+    const isActive = edge === 'home' && 4 - i < intensity;
+    return <FootballSlot key={`home-${i}`} active={isActive} team="home" />;
+  });
+
+  // Away slots (5): indices 0 to 4 (left to right, 0 is nearest center divider)
+  // Expand outward from divider: i < intensity
+  const awaySlots = [0, 1, 2, 3, 4].map((i) => {
+    const isActive = edge === 'away' && i < intensity;
+    return <FootballSlot key={`away-${i}`} active={isActive} team="away" />;
+  });
+
+  const edgeLabel =
+    edge === 'neutral'
+      ? 'Balanced'
+      : `${edge === 'home' ? homeTeam : awayTeam} advantage (${intensity}/5)`;
+
+  return (
+    <div
+      className="flex items-center"
+      role="meter"
+      aria-label={`${pillarName}: ${edgeLabel}`}
+      aria-valuenow={netDelta}
+    >
+      {/* 5 Home slots */}
+      <div className="flex items-center gap-1.5">{homeSlots}</div>
+
+      {/* Center divider */}
+      <div className="h-4 w-[2px] bg-zinc-700 rounded-full mx-1.5" />
+
+      {/* 5 Away slots */}
+      <div className="flex items-center gap-1.5">{awaySlots}</div>
+    </div>
+  );
+}
+
 export default function V2MatchCard({
   match,
   legacyMatch,
@@ -158,38 +259,45 @@ export default function V2MatchCard({
     }
   }
 
-  // 4-Pillar Clash Calculations
-  const aerialHome = homeProfile?.atk_box_aerial ?? 0;
-  const aerialAwaySupp = awayProfile?.def_box_aerial_suppression ?? 0;
-  const deltaAerialH = aerialHome - aerialAwaySupp;
+  // 4-Pillar Net Matchup Deltas: (home_atk - away_def) - (away_atk - home_def)
+  const netCentral =
+    ((homeProfile?.atk_central_penetration ?? 0) - (awayProfile?.def_central_space_denial ?? 0)) -
+    ((awayProfile?.atk_central_penetration ?? 0) - (homeProfile?.def_central_space_denial ?? 0));
 
-  const centralHome = homeProfile?.atk_central_penetration ?? 0;
-  const centralAwaySupp = awayProfile?.def_central_space_denial ?? 0;
-  const deltaCentralH = centralHome - centralAwaySupp;
+  const netTransition =
+    ((homeProfile?.atk_transition_speed ?? 0) - (awayProfile?.def_rest_defense ?? 0)) -
+    ((awayProfile?.atk_transition_speed ?? 0) - (homeProfile?.def_rest_defense ?? 0));
 
-  const transitionHome = homeProfile?.atk_transition_speed ?? 0;
-  const transitionAwaySupp = awayProfile?.def_rest_defense ?? 0;
-  const deltaTransitionH = transitionHome - transitionAwaySupp;
+  const netAerial =
+    ((homeProfile?.atk_box_aerial ?? 0) - (awayProfile?.def_box_aerial_suppression ?? 0)) -
+    ((awayProfile?.atk_box_aerial ?? 0) - (homeProfile?.def_box_aerial_suppression ?? 0));
 
-  const perimeterHome = homeProfile?.atk_perimeter_chaos ?? 0;
-  const perimeterAwaySupp = awayProfile?.def_perimeter_suppression ?? 0;
-  const deltaPerimeterH = perimeterHome - perimeterAwaySupp;
+  const netPerimeter =
+    ((homeProfile?.atk_perimeter_chaos ?? 0) - (awayProfile?.def_perimeter_suppression ?? 0)) -
+    ((awayProfile?.atk_perimeter_chaos ?? 0) - (homeProfile?.def_perimeter_suppression ?? 0));
 
-  const aerialAway = awayProfile?.atk_box_aerial ?? 0;
-  const aerialHomeSupp = homeProfile?.def_box_aerial_suppression ?? 0;
-  const deltaAerialA = aerialAway - aerialHomeSupp;
-
-  const centralAway = awayProfile?.atk_central_penetration ?? 0;
-  const centralHomeSupp = homeProfile?.def_central_space_denial ?? 0;
-  const deltaCentralA = centralAway - centralHomeSupp;
-
-  const transitionAway = awayProfile?.atk_transition_speed ?? 0;
-  const transitionHomeSupp = homeProfile?.def_rest_defense ?? 0;
-  const deltaTransitionA = transitionAway - transitionHomeSupp;
-
-  const perimeterAway = awayProfile?.atk_perimeter_chaos ?? 0;
-  const perimeterHomeSupp = homeProfile?.def_perimeter_suppression ?? 0;
-  const deltaPerimeterA = perimeterAway - perimeterHomeSupp;
+  const pillars = [
+    {
+      name: 'Central Penetration vs Space Denial',
+      netDelta: netCentral,
+      dotColor: 'bg-emerald-400',
+    },
+    {
+      name: 'Transition Speed vs Rest Defense',
+      netDelta: netTransition,
+      dotColor: 'bg-sky-400',
+    },
+    {
+      name: 'Aerial / Cross Threat vs Aerial Suppression',
+      netDelta: netAerial,
+      dotColor: 'bg-amber-400',
+    },
+    {
+      name: 'Distance Chaos vs Distance Suppression',
+      netDelta: netPerimeter,
+      dotColor: 'bg-rose-400',
+    },
+  ];
 
   return (
     <div className="group relative rounded-2xl border border-neutral-800/80 bg-neutral-900/60 shadow-lg backdrop-blur-md transition-all duration-300 hover:border-neutral-700 hover:bg-neutral-900/90 hover:shadow-xl hover:shadow-black/40 overflow-hidden flex flex-col justify-between">
@@ -407,170 +515,55 @@ export default function V2MatchCard({
       {/* Expandable Tactical Breakdown Inspector */}
       {isExpanded && (
         <div className="border-t border-neutral-800 bg-neutral-950/80 p-5 sm:p-6 transition-all duration-300">
-          <div className="mb-4 flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-300">
-              4-Pillar Tactical Matchup Breakdown
-            </h4>
-            <div className="text-[11px] font-mono text-neutral-400">
-              Chaos Rating: <span className="text-neutral-200 font-semibold">{match.chaos_rating.toFixed(1)}</span>
+          {/* Header & Matchup Legend */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-300">
+                4-Pillar Tactical Matchup Breakdown
+              </h4>
+            </div>
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {match.home_team}
+              </span>
+              <span className="text-neutral-600 font-mono text-[10px]">vs</span>
+              <span className="text-sky-400 font-semibold flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                {match.away_team}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-4 text-xs">
-            {/* Pillar 1: Central Penetration vs Space Denial */}
-            <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                  Central Penetration vs Space Denial
+          {/* Obfuscated 5-Football Momentum Tug-of-War Rows */}
+          <div className="space-y-2.5 text-xs">
+            {pillars.map((pillar) => (
+              <div
+                key={pillar.name}
+                className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 px-3.5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5"
+              >
+                <span className="font-semibold text-neutral-200 flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${pillar.dotColor}`} />
+                  {pillar.name}
                 </span>
-                <span
-                  className={`font-mono text-[11px] font-bold ${
-                    deltaCentralH >= 0 ? 'text-emerald-400' : 'text-sky-400'
-                  }`}
-                >
-                  Delta: {deltaCentralH >= 0 ? `+${deltaCentralH.toFixed(1)}` : deltaCentralH.toFixed(1)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-[11px] text-neutral-400">
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.home_team} Atk:</span>
-                    <span className="font-mono text-neutral-200">{centralHome.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.away_team} Def:</span>
-                    <span className="font-mono text-neutral-200">{centralAwaySupp.toFixed(1)}</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.away_team} Atk:</span>
-                    <span className="font-mono text-neutral-200">{centralAway.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.home_team} Def:</span>
-                    <span className="font-mono text-neutral-200">{centralHomeSupp.toFixed(1)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Pillar 2: Transition Speed vs Rest Defense */}
-            <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-sky-400" />
-                  Transition Speed vs Rest Defense
-                </span>
-                <span
-                  className={`font-mono text-[11px] font-bold ${
-                    deltaTransitionH >= 0 ? 'text-emerald-400' : 'text-sky-400'
-                  }`}
-                >
-                  Delta: {deltaTransitionH >= 0 ? `+${deltaTransitionH.toFixed(1)}` : deltaTransitionH.toFixed(1)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-[11px] text-neutral-400">
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.home_team} Break:</span>
-                    <span className="font-mono text-neutral-200">{transitionHome.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.away_team} Rest Def:</span>
-                    <span className="font-mono text-neutral-200">{transitionAwaySupp.toFixed(1)}</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.away_team} Break:</span>
-                    <span className="font-mono text-neutral-200">{transitionAway.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.home_team} Rest Def:</span>
-                    <span className="font-mono text-neutral-200">{transitionHomeSupp.toFixed(1)}</span>
-                  </div>
+                <div className="flex items-center justify-end">
+                  <MomentumMeter
+                    netDelta={pillar.netDelta}
+                    homeTeam={match.home_team}
+                    awayTeam={match.away_team}
+                    pillarName={pillar.name}
+                  />
                 </div>
               </div>
-            </div>
+            ))}
+          </div>
 
-            {/* Pillar 3: Aerial & Set Piece Threat vs Aerial Suppression */}
-            <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-400" />
-                  Aerial / Cross Threat vs Aerial Suppression
-                </span>
-                <span
-                  className={`font-mono text-[11px] font-bold ${
-                    deltaAerialH >= 0 ? 'text-emerald-400' : 'text-sky-400'
-                  }`}
-                >
-                  Delta: {deltaAerialH >= 0 ? `+${deltaAerialH.toFixed(1)}` : deltaAerialH.toFixed(1)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-[11px] text-neutral-400">
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.home_team} Aerial:</span>
-                    <span className="font-mono text-neutral-200">{aerialHome.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.away_team} Aerial Def:</span>
-                    <span className="font-mono text-neutral-200">{aerialAwaySupp.toFixed(1)}</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.away_team} Aerial:</span>
-                    <span className="font-mono text-neutral-200">{aerialAway.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.home_team} Aerial Def:</span>
-                    <span className="font-mono text-neutral-200">{aerialHomeSupp.toFixed(1)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Pillar 4: Perimeter Chaos vs Perimeter Suppression */}
-            <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-3.5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-rose-400" />
-                  Distance Chaos vs Distance Suppression
-                </span>
-                <span
-                  className={`font-mono text-[11px] font-bold ${
-                    deltaPerimeterH >= 0 ? 'text-emerald-400' : 'text-sky-400'
-                  }`}
-                >
-                  Delta: {deltaPerimeterH >= 0 ? `+${deltaPerimeterH.toFixed(1)}` : deltaPerimeterH.toFixed(1)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-[11px] text-neutral-400">
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.home_team} Chaos:</span>
-                    <span className="font-mono text-neutral-200">{perimeterHome.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.away_team} Perimeter Def:</span>
-                    <span className="font-mono text-neutral-200">{perimeterAwaySupp.toFixed(1)}</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span>{match.away_team} Chaos:</span>
-                    <span className="font-mono text-neutral-200">{perimeterAway.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{match.home_team} Perimeter Def:</span>
-                    <span className="font-mono text-neutral-200">{perimeterHomeSupp.toFixed(1)}</span>
-                  </div>
-                </div>
-              </div>
+          {/* Footer note & Chaos dynamic */}
+          <div className="mt-3.5 flex items-center justify-between border-t border-neutral-800/60 pt-3 text-[11px] text-neutral-400">
+            <span className="text-neutral-500">Tactical Phase Momentum Tug-of-War</span>
+            <div className="font-mono text-neutral-400">
+              Chaos Rating: <span className="text-neutral-200 font-semibold">{match.chaos_rating.toFixed(1)}</span>
             </div>
           </div>
         </div>
