@@ -266,10 +266,10 @@ function getTacticalAdvantageBadge(
   if (tacticalDelta >= 15) {
     return {
       label: `Strong ${homeTeam} Edge`,
-      textColor: 'text-emerald-300 drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]',
+      textColor: 'text-emerald-400',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-emerald-500/50 bg-neutral-950 shadow-[0_0_12px_rgba(16,185,129,0.4)] shrink-0"
+          className="w-9 h-9 min-w-[36px] min-h-[36px] flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center relative border border-emerald-500/50 bg-neutral-950 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
           aria-hidden="true"
         >
           <GenericTeamCrest team={homeInfo} size={36} />
@@ -285,7 +285,7 @@ function getTacticalAdvantageBadge(
       textColor: 'text-emerald-400',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-emerald-500/35 bg-neutral-950/90 shadow-[0_0_8px_rgba(16,185,129,0.2)] shrink-0"
+          className="w-9 h-9 min-w-[36px] min-h-[36px] flex-shrink-0 rounded-full overflow-hidden flex relative border border-emerald-500/35 bg-neutral-950/90 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
           aria-hidden="true"
         >
           {/* Left half: Home crest */}
@@ -307,10 +307,10 @@ function getTacticalAdvantageBadge(
   if (tacticalDelta <= -15) {
     return {
       label: `Strong ${awayTeam} Edge`,
-      textColor: 'text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.35)]',
+      textColor: 'text-sky-400',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-sky-500/50 bg-neutral-950 shadow-[0_0_12px_rgba(14,165,233,0.4)] shrink-0"
+          className="w-9 h-9 min-w-[36px] min-h-[36px] flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center relative border border-sky-500/50 bg-neutral-950 shadow-[0_0_12px_rgba(14,165,233,0.4)]"
           aria-hidden="true"
         >
           <GenericTeamCrest team={awayInfo} size={36} />
@@ -326,7 +326,7 @@ function getTacticalAdvantageBadge(
       textColor: 'text-sky-400',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-sky-500/35 bg-neutral-950/90 shadow-[0_0_8px_rgba(14,165,233,0.2)] shrink-0"
+          className="w-9 h-9 min-w-[36px] min-h-[36px] flex-shrink-0 rounded-full overflow-hidden flex relative border border-sky-500/35 bg-neutral-950/90 shadow-[0_0_8px_rgba(14,165,233,0.2)]"
           aria-hidden="true"
         >
           {/* Left half: muted/empty */}
@@ -350,7 +350,7 @@ function getTacticalAdvantageBadge(
     textColor: 'text-zinc-300',
     icon: (
       <div
-        className="w-9 h-9 rounded-full overflow-hidden flex relative border border-zinc-700 bg-neutral-950 shadow-[0_0_6px_rgba(113,113,122,0.2)] shrink-0"
+        className="w-9 h-9 min-w-[36px] min-h-[36px] flex-shrink-0 rounded-full overflow-hidden flex relative border border-zinc-700 bg-neutral-950 shadow-[0_0_6px_rgba(113,113,122,0.2)]"
         aria-hidden="true"
       >
         {/* Left half: Home crest */}
@@ -530,14 +530,19 @@ export default function V2MatchCard({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Tactical Narrative Advantage Badge (Vertical Stack, Flush) */}
-            <div className="flex flex-col items-center justify-center text-center gap-1">
-              {tacticalBadge.icon}
-              <span
-                className={`text-[11px] font-semibold tracking-wide leading-tight max-w-[140px] ${tacticalBadge.textColor}`}
-              >
-                {tacticalBadge.label}
-              </span>
+            {/* Tactical Narrative Advantage Badge (Horizontal Lockup) */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 min-w-[36px] min-h-[36px] flex-shrink-0 flex items-center justify-center">
+                {tacticalBadge.icon}
+              </div>
+              <div className="flex flex-col text-left justify-center leading-tight">
+                <span className="text-[10px] uppercase font-semibold tracking-wider text-zinc-500">
+                  TACTICAL MATCHUP
+                </span>
+                <span className={`text-xs font-medium ${tacticalBadge.textColor}`}>
+                  {tacticalBadge.label}
+                </span>
+              </div>
             </div>
 
             {/* Additional Badges */}
