@@ -266,10 +266,10 @@ function getTacticalAdvantageBadge(
   if (tacticalDelta >= 15) {
     return {
       label: `Strong ${homeTeam} Edge`,
-      theme: 'border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.18)]',
+      textColor: 'text-emerald-300 drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-emerald-500/40 bg-neutral-950 shadow-[0_0_8px_rgba(16,185,129,0.3)] shrink-0"
+          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-emerald-500/50 bg-neutral-950 shadow-[0_0_12px_rgba(16,185,129,0.4)] shrink-0"
           aria-hidden="true"
         >
           <GenericTeamCrest team={homeInfo} size={36} />
@@ -282,10 +282,10 @@ function getTacticalAdvantageBadge(
   if (tacticalDelta >= 5) {
     return {
       label: `Slight ${homeTeam} Edge`,
-      theme: 'border-emerald-500/25 text-emerald-400',
+      textColor: 'text-emerald-400',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-emerald-500/30 bg-neutral-950/90 shrink-0"
+          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-emerald-500/35 bg-neutral-950/90 shadow-[0_0_8px_rgba(16,185,129,0.2)] shrink-0"
           aria-hidden="true"
         >
           {/* Left half: Home crest */}
@@ -307,10 +307,10 @@ function getTacticalAdvantageBadge(
   if (tacticalDelta <= -15) {
     return {
       label: `Strong ${awayTeam} Edge`,
-      theme: 'border-sky-500/40 text-sky-300 shadow-[0_0_12px_rgba(14,165,233,0.18)]',
+      textColor: 'text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.35)]',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-sky-500/40 bg-neutral-950 shadow-[0_0_8px_rgba(14,165,233,0.3)] shrink-0"
+          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-sky-500/50 bg-neutral-950 shadow-[0_0_12px_rgba(14,165,233,0.4)] shrink-0"
           aria-hidden="true"
         >
           <GenericTeamCrest team={awayInfo} size={36} />
@@ -323,10 +323,10 @@ function getTacticalAdvantageBadge(
   if (tacticalDelta <= -5) {
     return {
       label: `Slight ${awayTeam} Edge`,
-      theme: 'border-sky-500/25 text-sky-400',
+      textColor: 'text-sky-400',
       icon: (
         <div
-          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-sky-500/30 bg-neutral-950/90 shrink-0"
+          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-sky-500/35 bg-neutral-950/90 shadow-[0_0_8px_rgba(14,165,233,0.2)] shrink-0"
           aria-hidden="true"
         >
           {/* Left half: muted/empty */}
@@ -347,10 +347,10 @@ function getTacticalAdvantageBadge(
   // Tactical Parity (-4.9 to +4.9): Split Crest (50/50)
   return {
     label: 'Tactical Parity',
-    theme: 'border-zinc-700 text-zinc-300',
+    textColor: 'text-zinc-300',
     icon: (
       <div
-        className="w-9 h-9 rounded-full overflow-hidden flex relative border border-zinc-700 bg-neutral-950 shrink-0"
+        className="w-9 h-9 rounded-full overflow-hidden flex relative border border-zinc-700 bg-neutral-950 shadow-[0_0_6px_rgba(113,113,122,0.2)] shrink-0"
         aria-hidden="true"
       >
         {/* Left half: Home crest */}
@@ -530,12 +530,12 @@ export default function V2MatchCard({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Tactical Narrative Advantage Badge (Vertical Stack) */}
-            <div
-              className={`flex flex-col items-center justify-center text-center gap-1 px-3 py-2 rounded-xl border bg-zinc-900/60 transition-all ${tacticalBadge.theme}`}
-            >
+            {/* Tactical Narrative Advantage Badge (Vertical Stack, Flush) */}
+            <div className="flex flex-col items-center justify-center text-center gap-1">
               {tacticalBadge.icon}
-              <span className="text-[11px] font-semibold tracking-wide leading-tight max-w-[140px]">
+              <span
+                className={`text-[11px] font-semibold tracking-wide leading-tight max-w-[140px] ${tacticalBadge.textColor}`}
+              >
                 {tacticalBadge.label}
               </span>
             </div>
