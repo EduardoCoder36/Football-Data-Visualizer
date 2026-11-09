@@ -254,36 +254,6 @@ function getTeamInfo(teamName: string): { id: number; name: string; tla: string 
   };
 }
 
-function SplitCrest({
-  homeTeam,
-  awayTeam,
-}: {
-  homeTeam: { id: number; name: string; tla: string };
-  awayTeam: { id: number; name: string; tla: string };
-}) {
-  return (
-    <div
-      className="w-5 h-5 rounded-full overflow-hidden flex relative border border-zinc-700 shrink-0 bg-neutral-950"
-      aria-hidden="true"
-    >
-      {/* Left half: Home crest */}
-      <div className="w-1/2 h-full overflow-hidden relative">
-        <div className="absolute left-0 top-0">
-          <GenericTeamCrest team={homeTeam} size={20} />
-        </div>
-      </div>
-      {/* Center seam */}
-      <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-zinc-600/80 z-10 -translate-x-1/2" />
-      {/* Right half: Away crest */}
-      <div className="w-1/2 h-full overflow-hidden relative">
-        <div className="absolute right-0 top-0">
-          <GenericTeamCrest team={awayTeam} size={20} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function getTacticalAdvantageBadge(
   tacticalDelta: number,
   homeTeam: string,
@@ -292,59 +262,113 @@ function getTacticalAdvantageBadge(
   const homeInfo = getTeamInfo(homeTeam);
   const awayInfo = getTeamInfo(awayTeam);
 
+  // Strong Home Edge (>= +15): Full circular frame showing the entire Home crest
   if (tacticalDelta >= 15) {
     return {
       label: `Strong ${homeTeam} Edge`,
-      theme: 'border-emerald-500/40 bg-emerald-950/20 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]',
+      theme: 'border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.18)]',
       icon: (
-        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/40">
-          <GenericTeamCrest team={homeInfo} size={20} />
+        <div
+          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-emerald-500/40 bg-neutral-950 shadow-[0_0_8px_rgba(16,185,129,0.3)] shrink-0"
+          aria-hidden="true"
+        >
+          <GenericTeamCrest team={homeInfo} size={36} />
         </div>
       ),
     };
   }
 
+  // Slight Home Edge (+5 to +14.9): Half Crest (Left Half Only) with vertical seam
   if (tacticalDelta >= 5) {
     return {
       label: `Slight ${homeTeam} Edge`,
-      theme: 'border-emerald-500/25 bg-emerald-950/10 text-emerald-400',
+      theme: 'border-emerald-500/25 text-emerald-400',
       icon: (
-        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/20 opacity-90">
-          <GenericTeamCrest team={homeInfo} size={20} />
+        <div
+          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-emerald-500/30 bg-neutral-950/90 shrink-0"
+          aria-hidden="true"
+        >
+          {/* Left half: Home crest */}
+          <div className="w-1/2 h-full overflow-hidden relative">
+            <div className="absolute left-0 top-0">
+              <GenericTeamCrest team={homeInfo} size={36} />
+            </div>
+          </div>
+          {/* Vertical center seam */}
+          <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-emerald-500/50 z-10 -translate-x-1/2" />
+          {/* Right half: muted/empty */}
+          <div className="w-1/2 h-full bg-zinc-950/80 relative" />
         </div>
       ),
     };
   }
 
+  // Strong Away Edge (<= -15): Full circular frame showing the entire Away crest
   if (tacticalDelta <= -15) {
     return {
       label: `Strong ${awayTeam} Edge`,
-      theme: 'border-sky-500/40 bg-sky-950/20 text-sky-300 shadow-[0_0_8px_rgba(14,165,233,0.15)]',
+      theme: 'border-sky-500/40 text-sky-300 shadow-[0_0_12px_rgba(14,165,233,0.18)]',
       icon: (
-        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-sky-500/40">
-          <GenericTeamCrest team={awayInfo} size={20} />
+        <div
+          className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center relative border border-sky-500/40 bg-neutral-950 shadow-[0_0_8px_rgba(14,165,233,0.3)] shrink-0"
+          aria-hidden="true"
+        >
+          <GenericTeamCrest team={awayInfo} size={36} />
         </div>
       ),
     };
   }
 
+  // Slight Away Edge (-14.9 to -5): Half Crest (Right Half Only) with vertical seam
   if (tacticalDelta <= -5) {
     return {
       label: `Slight ${awayTeam} Edge`,
-      theme: 'border-sky-500/25 bg-sky-950/10 text-sky-400',
+      theme: 'border-sky-500/25 text-sky-400',
       icon: (
-        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-sky-500/20 opacity-90">
-          <GenericTeamCrest team={awayInfo} size={20} />
+        <div
+          className="w-9 h-9 rounded-full overflow-hidden flex relative border border-sky-500/30 bg-neutral-950/90 shrink-0"
+          aria-hidden="true"
+        >
+          {/* Left half: muted/empty */}
+          <div className="w-1/2 h-full bg-zinc-950/80 relative" />
+          {/* Vertical center seam */}
+          <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-sky-500/50 z-10 -translate-x-1/2" />
+          {/* Right half: Away crest */}
+          <div className="w-1/2 h-full overflow-hidden relative">
+            <div className="absolute right-0 top-0">
+              <GenericTeamCrest team={awayInfo} size={36} />
+            </div>
+          </div>
         </div>
       ),
     };
   }
 
-  // Tactical Parity: -4.9 to +4.9
+  // Tactical Parity (-4.9 to +4.9): Split Crest (50/50)
   return {
     label: 'Tactical Parity',
-    theme: 'border-zinc-700 bg-zinc-900/40 text-zinc-300',
-    icon: <SplitCrest homeTeam={homeInfo} awayTeam={awayInfo} />,
+    theme: 'border-zinc-700 text-zinc-300',
+    icon: (
+      <div
+        className="w-9 h-9 rounded-full overflow-hidden flex relative border border-zinc-700 bg-neutral-950 shrink-0"
+        aria-hidden="true"
+      >
+        {/* Left half: Home crest */}
+        <div className="w-1/2 h-full overflow-hidden relative">
+          <div className="absolute left-0 top-0">
+            <GenericTeamCrest team={homeInfo} size={36} />
+          </div>
+        </div>
+        {/* Center seam */}
+        <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-zinc-600 z-10 -translate-x-1/2" />
+        {/* Right half: Away crest */}
+        <div className="w-1/2 h-full overflow-hidden relative">
+          <div className="absolute right-0 top-0">
+            <GenericTeamCrest team={awayInfo} size={36} />
+          </div>
+        </div>
+      </div>
+    ),
   };
 }
 
@@ -506,28 +530,32 @@ export default function V2MatchCard({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Tactical Narrative Advantage Badge */}
-            <span
-              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${tacticalBadge.theme}`}
+            {/* Tactical Narrative Advantage Badge (Vertical Stack) */}
+            <div
+              className={`flex flex-col items-center justify-center text-center gap-1 px-3 py-2 rounded-xl border bg-zinc-900/60 transition-all ${tacticalBadge.theme}`}
             >
               {tacticalBadge.icon}
-              <span>{tacticalBadge.label}</span>
-            </span>
-
-            {/* Model Divergence Highlight */}
-            {showComparison && hasDivergence && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/20 border border-purple-500/40 px-2 py-0.5 text-[11px] font-bold text-purple-300 animate-pulse">
-                <span>⚡ Model Divergence</span>
+              <span className="text-[11px] font-semibold tracking-wide leading-tight max-w-[140px]">
+                {tacticalBadge.label}
               </span>
-            )}
+            </div>
 
-            {/* Hit/Miss Outcome Badge */}
-            {outcomeBadge && (
-              <span
-                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold ${outcomeBadge.style}`}
-              >
-                {outcomeBadge.label}
-              </span>
+            {/* Additional Badges */}
+            {(showComparison && hasDivergence || outcomeBadge) && (
+              <div className="flex flex-col gap-1.5 self-center">
+                {showComparison && hasDivergence && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/20 border border-purple-500/40 px-2 py-0.5 text-[11px] font-bold text-purple-300 animate-pulse">
+                    <span>⚡ Model Divergence</span>
+                  </span>
+                )}
+                {outcomeBadge && (
+                  <span
+                    className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-bold ${outcomeBadge.style}`}
+                  >
+                    {outcomeBadge.label}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
