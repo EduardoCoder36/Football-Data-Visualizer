@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import GenericTeamCrest from '../analytics/GenericTeamCrest';
 
 export interface V2MatchPrediction {
   id: string;
@@ -163,6 +164,190 @@ function MomentumMeter({
   );
 }
 
+const TEAM_META: Record<string, { id: number; tla: string }> = {
+  Arsenal: { id: 57, tla: 'ARS' },
+  'Arsenal FC': { id: 57, tla: 'ARS' },
+  'Aston Villa': { id: 58, tla: 'AVL' },
+  'Aston Villa FC': { id: 58, tla: 'AVL' },
+  Bournemouth: { id: 1044, tla: 'BOU' },
+  'AFC Bournemouth': { id: 1044, tla: 'BOU' },
+  Brentford: { id: 402, tla: 'BRE' },
+  'Brentford FC': { id: 402, tla: 'BRE' },
+  Brighton: { id: 397, tla: 'BHA' },
+  'Brighton & Hove Albion': { id: 397, tla: 'BHA' },
+  'Brighton & Hove Albion FC': { id: 397, tla: 'BHA' },
+  'Brighton and Hove Albion': { id: 397, tla: 'BHA' },
+  'Brighton Hove': { id: 397, tla: 'BHA' },
+  Burnley: { id: 328, tla: 'BUR' },
+  'Burnley FC': { id: 328, tla: 'BUR' },
+  Chelsea: { id: 61, tla: 'CHE' },
+  'Chelsea FC': { id: 61, tla: 'CHE' },
+  Coventry: { id: 1076, tla: 'COV' },
+  'Coventry City': { id: 1076, tla: 'COV' },
+  'Crystal Palace': { id: 354, tla: 'CRY' },
+  'Crystal Palace FC': { id: 354, tla: 'CRY' },
+  Everton: { id: 62, tla: 'EVE' },
+  'Everton FC': { id: 62, tla: 'EVE' },
+  Fulham: { id: 63, tla: 'FUL' },
+  'Fulham FC': { id: 63, tla: 'FUL' },
+  Hull: { id: 322, tla: 'HUL' },
+  'Hull City': { id: 322, tla: 'HUL' },
+  Ipswich: { id: 349, tla: 'IPS' },
+  'Ipswich Town': { id: 349, tla: 'IPS' },
+  'Ipswich Town FC': { id: 349, tla: 'IPS' },
+  Leeds: { id: 341, tla: 'LEE' },
+  'Leeds United': { id: 341, tla: 'LEE' },
+  'Leeds United FC': { id: 341, tla: 'LEE' },
+  Leicester: { id: 338, tla: 'LEI' },
+  'Leicester City': { id: 338, tla: 'LEI' },
+  Liverpool: { id: 64, tla: 'LIV' },
+  'Liverpool FC': { id: 64, tla: 'LIV' },
+  'Man City': { id: 65, tla: 'MCI' },
+  'Manchester City': { id: 65, tla: 'MCI' },
+  'Manchester City FC': { id: 65, tla: 'MCI' },
+  'Man United': { id: 66, tla: 'MUN' },
+  'Man Utd': { id: 66, tla: 'MUN' },
+  'Manchester Utd': { id: 66, tla: 'MUN' },
+  'Manchester United': { id: 66, tla: 'MUN' },
+  'Manchester United FC': { id: 66, tla: 'MUN' },
+  Newcastle: { id: 67, tla: 'NEW' },
+  'Newcastle United': { id: 67, tla: 'NEW' },
+  'Newcastle United FC': { id: 67, tla: 'NEW' },
+  Nottingham: { id: 351, tla: 'NFO' },
+  'Nott\'m Forest': { id: 351, tla: 'NFO' },
+  'Nottingham Forest': { id: 351, tla: 'NFO' },
+  'Nottingham Forest FC': { id: 351, tla: 'NFO' },
+  Southampton: { id: 340, tla: 'SOU' },
+  'Southampton FC': { id: 340, tla: 'SOU' },
+  Sunderland: { id: 71, tla: 'SUN' },
+  Tottenham: { id: 73, tla: 'TOT' },
+  'Tottenham Hotspur': { id: 73, tla: 'TOT' },
+  'Tottenham Hotspur FC': { id: 73, tla: 'TOT' },
+  Spurs: { id: 73, tla: 'TOT' },
+  'West Ham': { id: 563, tla: 'WHU' },
+  'West Ham United': { id: 563, tla: 'WHU' },
+  'West Ham United FC': { id: 563, tla: 'WHU' },
+  Wolves: { id: 76, tla: 'WOL' },
+  Wolverhampton: { id: 76, tla: 'WOL' },
+  'Wolverhampton Wanderers': { id: 76, tla: 'WOL' },
+};
+
+function getTeamInfo(teamName: string): { id: number; name: string; tla: string } {
+  const meta = TEAM_META[teamName] || TEAM_META[teamName.trim()];
+  if (meta) {
+    return {
+      id: meta.id,
+      name: teamName,
+      tla: meta.tla,
+    };
+  }
+  let hash = 0;
+  for (let i = 0; i < teamName.length; i++) {
+    hash = (hash << 5) - hash + teamName.charCodeAt(i);
+    hash |= 0;
+  }
+  const clean = teamName.replace(/[^a-zA-Z]/g, '');
+  return {
+    id: Math.abs(hash) || 999,
+    name: teamName,
+    tla: clean.slice(0, 3).toUpperCase() || 'FC',
+  };
+}
+
+function SplitCrest({
+  homeTeam,
+  awayTeam,
+}: {
+  homeTeam: { id: number; name: string; tla: string };
+  awayTeam: { id: number; name: string; tla: string };
+}) {
+  return (
+    <div
+      className="w-5 h-5 rounded-full overflow-hidden flex relative border border-zinc-700 shrink-0 bg-neutral-950"
+      aria-hidden="true"
+    >
+      {/* Left half: Home crest */}
+      <div className="w-1/2 h-full overflow-hidden relative">
+        <div className="absolute left-0 top-0">
+          <GenericTeamCrest team={homeTeam} size={20} />
+        </div>
+      </div>
+      {/* Center seam */}
+      <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-zinc-600/80 z-10 -translate-x-1/2" />
+      {/* Right half: Away crest */}
+      <div className="w-1/2 h-full overflow-hidden relative">
+        <div className="absolute right-0 top-0">
+          <GenericTeamCrest team={awayTeam} size={20} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getTacticalAdvantageBadge(
+  tacticalDelta: number,
+  homeTeam: string,
+  awayTeam: string
+) {
+  const homeInfo = getTeamInfo(homeTeam);
+  const awayInfo = getTeamInfo(awayTeam);
+
+  if (tacticalDelta >= 15) {
+    return {
+      label: `Strong ${homeTeam} Edge`,
+      theme: 'border-emerald-500/40 bg-emerald-950/20 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]',
+      icon: (
+        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/40">
+          <GenericTeamCrest team={homeInfo} size={20} />
+        </div>
+      ),
+    };
+  }
+
+  if (tacticalDelta >= 5) {
+    return {
+      label: `Slight ${homeTeam} Edge`,
+      theme: 'border-emerald-500/25 bg-emerald-950/10 text-emerald-400',
+      icon: (
+        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-emerald-500/20 opacity-90">
+          <GenericTeamCrest team={homeInfo} size={20} />
+        </div>
+      ),
+    };
+  }
+
+  if (tacticalDelta <= -15) {
+    return {
+      label: `Strong ${awayTeam} Edge`,
+      theme: 'border-sky-500/40 bg-sky-950/20 text-sky-300 shadow-[0_0_8px_rgba(14,165,233,0.15)]',
+      icon: (
+        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-sky-500/40">
+          <GenericTeamCrest team={awayInfo} size={20} />
+        </div>
+      ),
+    };
+  }
+
+  if (tacticalDelta <= -5) {
+    return {
+      label: `Slight ${awayTeam} Edge`,
+      theme: 'border-sky-500/25 bg-sky-950/10 text-sky-400',
+      icon: (
+        <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 border border-sky-500/20 opacity-90">
+          <GenericTeamCrest team={awayInfo} size={20} />
+        </div>
+      ),
+    };
+  }
+
+  // Tactical Parity: -4.9 to +4.9
+  return {
+    label: 'Tactical Parity',
+    theme: 'border-zinc-700 bg-zinc-900/40 text-zinc-300',
+    icon: <SplitCrest homeTeam={homeInfo} awayTeam={awayInfo} />,
+  };
+}
+
 export default function V2MatchCard({
   match,
   legacyMatch,
@@ -299,6 +484,12 @@ export default function V2MatchCard({
     },
   ];
 
+  const tacticalBadge = getTacticalAdvantageBadge(
+    match.tactical_delta,
+    match.home_team,
+    match.away_team
+  );
+
   return (
     <div className="group relative rounded-2xl border border-neutral-800/80 bg-neutral-900/60 shadow-lg backdrop-blur-md transition-all duration-300 hover:border-neutral-700 hover:bg-neutral-900/90 hover:shadow-xl hover:shadow-black/40 overflow-hidden flex flex-col justify-between">
       {/* Top Bar: Kickoff, Badges, Divergence */}
@@ -315,17 +506,12 @@ export default function V2MatchCard({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Tactical Delta Badge */}
+            {/* Tactical Narrative Advantage Badge */}
             <span
-              className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold border ${
-                match.tactical_delta > 5
-                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                  : match.tactical_delta < -5
-                  ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
-                  : 'bg-neutral-800/80 text-neutral-300 border-neutral-700'
-              }`}
+              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${tacticalBadge.theme}`}
             >
-              {match.tactical_delta > 0 ? `+${match.tactical_delta}` : match.tactical_delta} Tactical Edge
+              {tacticalBadge.icon}
+              <span>{tacticalBadge.label}</span>
             </span>
 
             {/* Model Divergence Highlight */}
