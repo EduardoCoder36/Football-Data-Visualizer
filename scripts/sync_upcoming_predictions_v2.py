@@ -390,6 +390,136 @@ def compute_match_probabilities(
 # ---------------------------------------------------------------------------
 # 4. Pipeline Execution
 # ---------------------------------------------------------------------------
+def validate_prediction_probabilities(batch: List[Dict[str, Any]]):
+    """
+    Strict assertion ensuring no batch ever contains None, null, or NaN
+    for prob_home, prob_draw, or prob_away before upserting into Supabase.
+    """
+    for r in batch:
+        for key in ("prob_home", "prob_draw", "prob_away"):
+            val = r.get(key)
+            if val is None or not isinstance(val, (int, float)) or math.isnan(val):
+                raise ValueError(
+                    f"CRITICAL: Record {r.get('id')} ({r.get('home_team')} vs {r.get('away_team')}) "
+                    f"has invalid/null {key}={val}. Aborting upsert to protect database integrity."
+                )
+
+
+def lock_finished_matches_v2():
+    """
+    Step 1 of pipeline:
+    Checks match results from Football-Data API and locks finished or live matches
+    in `match_predictions_v2`.
+    Updates scores and status without recalculating or modifying pre-match probabilities.
+    Ensures prob_home, prob_draw, and prob_away are never None or null.
+    """
+    logger.info("Syncing fixture schedule and locking finished match results...")
+    pl_cl_records = sync_all_fixtures_schedule()
+    pl_matches = [r for r in pl_cl_records if r.get("competition_code") == "PL"]
+
+    logger.info("Fetching existing records from 'match_predictions_v2' to preserve pre-match predictions...")
+    pred_res = supabase.table("match_predictions_v2").select("*").limit(2000).execute()
+    existing_preds: Dict[str, Dict[str, Any]] = {
+        str(r["id"]): r for r in (pred_res.data or [])
+    }
+
+    # Optional profile fallback for brand new matches that were already finished
+    profiles = {}
+    try:
+        p_res = supabase.table("team_tactical_profiles_v2").select("*").execute()
+        if p_res.data:
+            profiles = {r["team"]: r for r in p_res.data}
+    except Exception as e:
+        logger.warning(f"Could not load tactical profiles for finished-matches fallback: {e}")
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    locked_records: List[Dict[str, Any]] = []
+
+    for m in pl_matches:
+        mid_str = str(m.get("match_id"))
+        status = m.get("status", "SCHEDULED")
+        home_score = m.get("home_score")
+        away_score = m.get("away_score")
+
+        is_finished = status in ("FINISHED", "AWARDED") or home_score is not None
+        if not is_finished:
+            continue
+
+        home_team = m.get("home_team", "")
+        away_team = m.get("away_team", "")
+
+        if mid_str in existing_preds:
+            prev = existing_preds[mid_str]
+            p_h = prev.get("prob_home")
+            p_d = prev.get("prob_draw")
+            p_a = prev.get("prob_away")
+
+            # Fallback if previous DB row somehow had null/NaN
+            p_h = 0.36 if p_h is None or math.isnan(p_h) else float(p_h)
+            p_d = 0.28 if p_d is None or math.isnan(p_d) else float(p_d)
+            p_a = 0.36 if p_a is None or math.isnan(p_a) else float(p_a)
+
+            record = {
+                "id": mid_str,
+                "match_id": int(mid_str),
+                "home_team": prev.get("home_team", home_team),
+                "away_team": prev.get("away_team", away_team),
+                "matchday": int(prev.get("matchday", m.get("matchday", 1))),
+                "utc_date": prev.get("utc_date", m.get("utc_date", "")),
+                "status": status,
+                "home_score": home_score,
+                "away_score": away_score,
+                "prob_home": round(p_h, 4),
+                "prob_draw": round(p_d, 4),
+                "prob_away": round(p_a, 4),
+                "tactical_delta": prev.get("tactical_delta", 0.0),
+                "chaos_rating": prev.get("chaos_rating", 50.0),
+                "home_floor": prev.get("home_floor", 50.0),
+                "home_ceiling": prev.get("home_ceiling", 50.0),
+                "away_floor": prev.get("away_floor", 50.0),
+                "away_ceiling": prev.get("away_ceiling", 50.0),
+                "updated_at": now_utc,
+            }
+        else:
+            # Match never had a record in match_predictions_v2 before: compute baseline
+            hp = profiles.get(home_team, {"floor": 50.0, "ceiling": 50.0, "chaos_index": 50.0})
+            ap = profiles.get(away_team, {"floor": 50.0, "ceiling": 50.0, "chaos_index": 50.0})
+            record = {
+                "id": mid_str,
+                "match_id": int(mid_str),
+                "home_team": home_team,
+                "away_team": away_team,
+                "matchday": int(m.get("matchday", 1)),
+                "utc_date": m.get("utc_date", ""),
+                "status": status,
+                "home_score": home_score,
+                "away_score": away_score,
+                "prob_home": 0.36,
+                "prob_draw": 0.28,
+                "prob_away": 0.36,
+                "tactical_delta": 0.0,
+                "chaos_rating": 50.0,
+                "home_floor": float(hp.get("floor", 50.0)),
+                "home_ceiling": float(hp.get("ceiling", 50.0)),
+                "away_floor": float(ap.get("floor", 50.0)),
+                "away_ceiling": float(ap.get("ceiling", 50.0)),
+                "updated_at": now_utc,
+            }
+
+        locked_records.append(record)
+
+    if locked_records:
+        logger.info(f"Upserting {len(locked_records)} locked finished matches to 'match_predictions_v2'...")
+        batch_size = 50
+        for i in range(0, len(locked_records), batch_size):
+            batch = locked_records[i : i + batch_size]
+            validate_prediction_probabilities(batch)
+            supabase.table("match_predictions_v2").upsert(batch, on_conflict="id").execute()
+        logger.info(f"Successfully locked and updated {len(locked_records)} finished matches.")
+    else:
+        logger.info("No finished matches required locking.")
+
+
 def sync_predictions_v2(sync_cups: bool = False, sync_stats: bool = False):
     if sync_cups:
         try:
@@ -424,6 +554,12 @@ def sync_predictions_v2(sync_cups: bool = False, sync_stats: bool = False):
     pl_matches = [r for r in pl_cl_records if r.get("competition_code") == "PL"]
     team_history = build_team_match_history(pl_matches)
 
+    logger.info("Loading existing predictions from 'match_predictions_v2' to protect locked matches...")
+    pred_res = supabase.table("match_predictions_v2").select("*").limit(2000).execute()
+    existing_preds: Dict[str, Dict[str, Any]] = {
+        str(r["id"]): r for r in (pred_res.data or [])
+    }
+
     logger.info("Loading V2 tactical profiles from Supabase 'team_tactical_profiles_v2'...")
     p_res = supabase.table("team_tactical_profiles_v2").select("*").execute()
     if not p_res.data:
@@ -437,8 +573,12 @@ def sync_predictions_v2(sync_cups: bool = False, sync_stats: bool = False):
     form_deltas: Dict[str, float] = {}
     rest_deltas: Dict[str, float] = {}
 
+    locked_count = 0
+    updated_count = 0
+
     for m in pl_matches:
         mid = m.get("match_id")
+        mid_str = str(mid)
         home_team = m.get("home_team", "")
         away_team = m.get("away_team", "")
 
@@ -450,28 +590,90 @@ def sync_predictions_v2(sync_cups: bool = False, sync_stats: bool = False):
         ap = profiles[away_team]
 
         match_utc = m.get("utc_date", "")
-        form_h = get_recent_form_score(team_history.get(home_team, []), match_utc)
-        form_a = get_recent_form_score(team_history.get(away_team, []), match_utc)
-        d_form = max(-8.0, min(8.0, form_h - form_a))
-        form_deltas[str(mid)] = d_form
-
-        rest_h = calculate_rest_days(rest_history.get(home_team, []), match_utc)
-        rest_a = calculate_rest_days(rest_history.get(away_team, []), match_utc)
-        fatigue_h = compute_fatigue_penalty(rest_h)
-        fatigue_a = compute_fatigue_penalty(rest_a)
-        d_rest = max(-5.0, min(5.0, fatigue_h - fatigue_a))
-        rest_deltas[str(mid)] = d_rest
-
-        prob_h, prob_d, prob_a, d_tactical, rating_edge, chaos = compute_match_probabilities(
-            hp, ap, d_form, d_rest
-        )
-
         status = m.get("status", "SCHEDULED")
         home_score = m.get("home_score")
         away_score = m.get("away_score")
 
+        # A match is locked once it has kicked off (IN_PLAY, PAUSED, FINISHED, AWARDED) or has a score
+        is_locked = status in ("FINISHED", "AWARDED", "IN_PLAY", "PAUSED") or home_score is not None
+
+        if is_locked and mid_str in existing_preds:
+            # PRESERVE FROZEN PRE-MATCH PREDICTION
+            prev = existing_preds[mid_str]
+            prev_ph = prev.get("prob_home")
+            prev_pd = prev.get("prob_draw")
+            prev_pa = prev.get("prob_away")
+
+            # Fallback only if previous DB value was somehow null or NaN
+            if prev_ph is not None and prev_pd is not None and prev_pa is not None and not (
+                math.isnan(prev_ph) or math.isnan(prev_pd) or math.isnan(prev_pa)
+            ):
+                prob_h = float(prev_ph)
+                prob_d = float(prev_pd)
+                prob_a = float(prev_pa)
+                d_tactical = prev.get("tactical_delta", 0.0)
+                chaos = prev.get("chaos_rating", 50.0)
+                h_floor = prev.get("home_floor", float(hp["floor"]))
+                h_ceiling = prev.get("home_ceiling", float(hp["ceiling"]))
+                a_floor = prev.get("away_floor", float(ap["floor"]))
+                a_ceiling = prev.get("away_ceiling", float(ap["ceiling"]))
+            else:
+                form_h = get_recent_form_score(team_history.get(home_team, []), match_utc)
+                form_a = get_recent_form_score(team_history.get(away_team, []), match_utc)
+                d_form = max(-8.0, min(8.0, form_h - form_a))
+                rest_h = calculate_rest_days(rest_history.get(home_team, []), match_utc)
+                rest_a = calculate_rest_days(rest_history.get(away_team, []), match_utc)
+                fatigue_h = compute_fatigue_penalty(rest_h)
+                fatigue_a = compute_fatigue_penalty(rest_a)
+                d_rest = max(-5.0, min(5.0, fatigue_h - fatigue_a))
+                prob_h, prob_d, prob_a, d_tactical, rating_edge, chaos = compute_match_probabilities(
+                    hp, ap, d_form, d_rest
+                )
+                h_floor = float(hp["floor"])
+                h_ceiling = float(hp["ceiling"])
+                a_floor = float(ap["floor"])
+                a_ceiling = float(ap["ceiling"])
+            locked_count += 1
+        else:
+            # UPCOMING FIXTURE (OR NEW FIXTURE): Calculate fresh predictions from tactical profiles
+            form_h = get_recent_form_score(team_history.get(home_team, []), match_utc)
+            form_a = get_recent_form_score(team_history.get(away_team, []), match_utc)
+            d_form = max(-8.0, min(8.0, form_h - form_a))
+            form_deltas[mid_str] = d_form
+
+            rest_h = calculate_rest_days(rest_history.get(home_team, []), match_utc)
+            rest_a = calculate_rest_days(rest_history.get(away_team, []), match_utc)
+            fatigue_h = compute_fatigue_penalty(rest_h)
+            fatigue_a = compute_fatigue_penalty(rest_a)
+            d_rest = max(-5.0, min(5.0, fatigue_h - fatigue_a))
+            rest_deltas[mid_str] = d_rest
+
+            prob_h, prob_d, prob_a, d_tactical, rating_edge, chaos = compute_match_probabilities(
+                hp, ap, d_form, d_rest
+            )
+            h_floor = float(hp["floor"])
+            h_ceiling = float(hp["ceiling"])
+            a_floor = float(ap["floor"])
+            a_ceiling = float(ap["ceiling"])
+            updated_count += 1
+
+        # Absolute protection against None / null / NaN
+        if prob_h is None or math.isnan(prob_h):
+            prob_h = 0.36
+        if prob_d is None or math.isnan(prob_d):
+            prob_d = 0.28
+        if prob_a is None or math.isnan(prob_a):
+            prob_a = 0.36
+
+        # Normalization safeguard
+        prob_sum = prob_h + prob_d + prob_a
+        if abs(prob_sum - 1.0) > 0.01 and prob_sum > 0:
+            prob_h = round(prob_h / prob_sum, 4)
+            prob_d = round(prob_d / prob_sum, 4)
+            prob_a = round(prob_a / prob_sum, 4)
+
         records.append({
-            "id": str(mid),
+            "id": mid_str,
             "match_id": int(mid),
             "home_team": home_team,
             "away_team": away_team,
@@ -480,25 +682,29 @@ def sync_predictions_v2(sync_cups: bool = False, sync_stats: bool = False):
             "status": status,
             "home_score": home_score,
             "away_score": away_score,
-            "prob_home": prob_h,
-            "prob_draw": prob_d,
-            "prob_away": prob_a,
-            "tactical_delta": d_tactical,
-            "chaos_rating": chaos,
-            "home_floor": float(hp["floor"]),
-            "home_ceiling": float(hp["ceiling"]),
-            "away_floor": float(ap["floor"]),
-            "away_ceiling": float(ap["ceiling"]),
+            "prob_home": float(round(prob_h, 4)),
+            "prob_draw": float(round(prob_d, 4)),
+            "prob_away": float(round(prob_a, 4)),
+            "tactical_delta": float(d_tactical) if d_tactical is not None else 0.0,
+            "chaos_rating": float(chaos) if chaos is not None else 50.0,
+            "home_floor": float(h_floor),
+            "home_ceiling": float(h_ceiling),
+            "away_floor": float(a_floor),
+            "away_ceiling": float(a_ceiling),
             "updated_at": now_utc,
         })
 
-    logger.info(f"Built {len(records)} prediction records.")
+    logger.info(
+        f"Built {len(records)} prediction records "
+        f"({locked_count} locked historical/live, {updated_count} recalculated upcoming)."
+    )
 
-    # Batch upsert into Supabase
+    # Batch upsert into Supabase with strict non-null probability validation
     print(f"\nUpserting {len(records)} fixtures to Supabase table 'match_predictions_v2'...")
     batch_size = 50
     for i in range(0, len(records), batch_size):
         batch = records[i : i + batch_size]
+        validate_prediction_probabilities(batch)
         supabase.table("match_predictions_v2").upsert(batch, on_conflict="id").execute()
 
     print(f"Successfully upserted {len(records)} fixtures into 'match_predictions_v2'.")
@@ -540,6 +746,10 @@ def main():
     print("=" * 90)
     print("V2 Tactical Engine - Step 4: Multi-Pillar Match Prediction Engine")
     print("=" * 90)
+    if "--lock-finished" in sys.argv or "--lock-results" in sys.argv:
+        lock_finished_matches_v2()
+        return
+
     sync_cups = "--sync-cups" in sys.argv
     sync_stats = "--sync-stats" in sys.argv
     sync_predictions_v2(sync_cups=sync_cups, sync_stats=sync_stats)

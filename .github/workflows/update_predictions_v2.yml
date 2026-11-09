@@ -25,7 +25,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests supabase python-dotenv pandas numpy soccerdata beautifulsoup4 html5lib
 
-      - name: Step 1 - Fetch Raw Stats (Understat & football-data.org)
+      - name: Step 1 - Lock Finished Matches & Capture Results
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: |
+          python scripts/sync_upcoming_predictions_v2.py --lock-finished
+
+      - name: Step 2 - Fetch Raw Stats (Understat & football-data.org)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -33,14 +41,14 @@ jobs:
         run: |
           python scripts/fetch_raw_stats_v2.py
 
-      - name: Step 2 - Recompute Form-Weighted Tactical Profiles V2
+      - name: Step 3 - Recompute Form-Weighted Tactical Profiles V2
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python scripts/compute_tactical_profiles_v2.py
 
-      - name: Step 3 - Synchronize Match Predictions V2
+      - name: Step 4 - Synchronize Upcoming Match Predictions V2
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
