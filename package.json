@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "sync": "tsx --env-file=.env.local services/sync-worker/index.ts"
+    "sync": "tsx --env-file=.env.local services/sync-worker/index.ts",
+    "db:seed-players": "tsx scripts/ingest-fpl-players.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
