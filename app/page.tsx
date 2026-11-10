@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getPlayersList, PlayerListItem } from '@/lib/queries/players';
 import { RegenAvatar } from '@/components/player/RegenAvatar';
 import { getFmBadgeClasses } from '@/components/player/AttributeGrid';
+import GenericTeamCrest from '@/components/analytics/GenericTeamCrest';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +28,8 @@ const FALLBACK_SPOTLIGHT: PlayerListItem[] = [
       name: 'Everton FC',
       short_name: 'Everton',
       tla: 'EVE',
-      crest_url: 'https://crests.football-data.org/62.png',
-      primary_color: '#3B82F6',
+      crest_url: null,
+      primary_color: '#003399',
     },
   },
   {
@@ -51,8 +52,8 @@ const FALLBACK_SPOTLIGHT: PlayerListItem[] = [
       name: 'Newcastle United FC',
       short_name: 'Newcastle United',
       tla: 'NEW',
-      crest_url: 'https://crests.football-data.org/67.png',
-      primary_color: '#F1F5F9',
+      crest_url: null,
+      primary_color: '#0F172A',
     },
   },
   {
@@ -75,7 +76,7 @@ const FALLBACK_SPOTLIGHT: PlayerListItem[] = [
       name: 'Nottingham Forest FC',
       short_name: 'Nottingham Forest',
       tla: 'NFO',
-      crest_url: 'https://crests.football-data.org/351.png',
+      crest_url: null,
       primary_color: '#DD0000',
     },
   },
@@ -98,9 +99,9 @@ const FALLBACK_SPOTLIGHT: PlayerListItem[] = [
       id: 397,
       name: 'Brighton & Hove Albion FC',
       short_name: 'Brighton',
-      tla: 'BRI',
-      crest_url: 'https://crests.football-data.org/397.png',
-      primary_color: '#3B82F6',
+      tla: 'BHA',
+      crest_url: null,
+      primary_color: '#0057B8',
     },
   },
 ];
@@ -438,14 +439,29 @@ export default async function HomePage() {
                       faceSeed={player.face_seed}
                       size={48}
                       alt={`${player.web_name} avatar`}
+                      team={player.team}
                       teamColor={teamColor}
+                      showClubBadge
                     />
                     <div className="min-w-0">
                       <div className="truncate text-sm font-bold text-white group-hover:text-blue-300 transition-colors">
                         {player.web_name}
                       </div>
-                      <div className="truncate text-xs text-zinc-400">
-                        {player.team?.short_name || 'Premier League'} •{' '}
+                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-zinc-400">
+                        {player.team && (
+                          <GenericTeamCrest
+                            team={{
+                              id: player.team.id,
+                              name: player.team.name,
+                              tla: player.team.tla,
+                            }}
+                            size={15}
+                          />
+                        )}
+                        <span className="truncate">
+                          {player.team?.short_name || 'Premier League'}
+                        </span>{' '}
+                        •{' '}
                         <span className="font-mono font-semibold text-zinc-300">
                           {player.primary_position}
                         </span>

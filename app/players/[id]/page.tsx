@@ -5,6 +5,7 @@ import { PlayerHeroHeader } from '@/components/player/PlayerHeroHeader';
 import { RadarChart } from '@/components/player/RadarChart';
 import { SeasonTelemetryCard } from '@/components/player/SeasonTelemetryCard';
 import { AttributeGrid } from '@/components/player/AttributeGrid';
+import { GenericTeamCrest } from '@/components/analytics/GenericTeamCrest';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,9 +76,10 @@ export default async function PlayerDetailPage({ params }: PlayerDetailPageProps
                 <span className="text-zinc-700">/</span>
                 <Link
                   href={`/players?teamId=${player.team.id}`}
-                  className="rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5 font-medium text-zinc-300 hover:border-zinc-700 hover:text-white transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5 font-medium text-zinc-300 hover:border-zinc-700 hover:text-white transition-colors"
                 >
-                  {player.team.short_name}
+                  <GenericTeamCrest team={player.team} size={14} />
+                  <span>{player.team.short_name}</span>
                 </Link>
               </>
             )}

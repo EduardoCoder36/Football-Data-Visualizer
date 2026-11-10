@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { PlayerProfileData, PlayerPosition } from '@/lib/queries/players';
+import GenericTeamCrest, { getClubCrestStyle } from '@/components/analytics/GenericTeamCrest';
 import { RegenAvatar } from './RegenAvatar';
 
 export interface PlayerHeroHeaderProps {
@@ -30,7 +31,8 @@ const POSITION_STYLES: Record<PlayerPosition, { label: string; classes: string }
 export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) => {
   const posMeta = POSITION_STYLES[player.primary_position] || POSITION_STYLES.MID;
   const ovr = player.ratings.overall_rating;
-  const teamColor = player.team?.primary_color || '#10b981';
+  const crestStyle = player.team ? getClubCrestStyle(player.team) : null;
+  const teamColor = crestStyle?.primary || player.team?.primary_color || '#10b981';
 
   const ovrRingClasses =
     ovr >= 80
@@ -57,15 +59,16 @@ export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) =>
       />
 
       <div className="relative z-10 flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-        {/* Left: RegenAvatar + Player Identity + Club & Position */}
+        {/* Left: RegenAvatar + Player Identity + Custom Club Crest & Position */}
         <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
           <RegenAvatar
             faceSeed={player.face_seed}
             size={104}
             alt={`${player.full_name} pixel regen avatar`}
+            team={player.team}
             teamColor={teamColor}
+            showClubBadge
             priority
-            className="ring-2 ring-zinc-700/80"
           />
 
           <div>
@@ -96,16 +99,22 @@ export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) =>
               <p className="mt-0.5 text-sm font-medium text-zinc-400">{player.full_name}</p>
             )}
 
-            {/* Club Name & Crest */}
+            {/* Club Name & Custom SVG Club Badge */}
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <div className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5">
-                {player.team?.crest_url ? (
-                  <img
-                    src={player.team.crest_url}
-                    alt=""
-                    width={20}
-                    height={20}
-                    className="h-5 w-5 object-contain"
+              <div
+                className="inline-flex items-center gap-2.5 rounded-xl border bg-zinc-950/80 px-3 py-1.5 shadow-sm"
+                style={{
+                  borderColor: crestStyle ? `${crestStyle.trim}44` : 'rgba(39,39,42,0.9)',
+                }}
+              >
+                {player.team ? (
+                  <GenericTeamCrest
+                    team={{
+                      id: player.team.id,
+                      name: player.team.name,
+                      tla: player.team.tla,
+                    }}
+                    size={26}
                   />
                 ) : (
                   <span
@@ -114,11 +123,11 @@ export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) =>
                     style={{ backgroundColor: teamColor }}
                   />
                 )}
-                <span className="text-sm font-semibold text-zinc-200">
+                <span className="text-sm font-semibold text-zinc-100">
                   {player.team?.name || 'Premier League Club'}
                 </span>
                 {player.team?.tla && (
-                  <span className="font-mono text-xs font-bold text-zinc-500">
+                  <span className="font-mono text-xs font-bold text-zinc-400">
                     ({player.team.tla})
                   </span>
                 )}

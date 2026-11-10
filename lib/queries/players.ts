@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { TEAM_COLORS, getTeamColor } from '@/constants/teamColors';
+import {
+  resolveCanonicalTla,
+  getClubCrestStyle,
+} from '@/components/analytics/GenericTeamCrest';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -278,7 +282,18 @@ async function fetchTeamsMap(): Promise<Map<number, PlayerTeamInfo>> {
   }
 
   data.forEach((row: any, idx: number) => {
-    const color = TEAM_COLORS[row.id]?.hex || getTeamColor(row.id, idx);
+    const canonicalTla = resolveCanonicalTla({
+      id: row.id,
+      name: row.name,
+      tla: row.tla,
+    });
+    const crestStyle = getClubCrestStyle({
+      id: row.id,
+      name: row.name,
+      tla: canonicalTla,
+    });
+    const color =
+      TEAM_COLORS[row.id]?.hex || crestStyle.primary || getTeamColor(row.id, idx);
     const shortDisplay =
       TEAM_COLORS[row.id]?.name ||
       row.short_name?.replace(/\s+(FC|AFC)$/i, '') ||
@@ -288,8 +303,8 @@ async function fetchTeamsMap(): Promise<Map<number, PlayerTeamInfo>> {
       id: row.id,
       name: row.name,
       short_name: shortDisplay,
-      tla: row.tla || shortDisplay.slice(0, 3).toUpperCase(),
-      crest_url: row.crest_url || null,
+      tla: canonicalTla,
+      crest_url: null,
       primary_color: color,
     });
   });

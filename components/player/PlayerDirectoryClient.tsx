@@ -7,6 +7,7 @@ import {
   PlayerTeamInfo,
   PlayerPosition,
 } from '@/lib/queries/players';
+import GenericTeamCrest, { getClubCrestStyle } from '@/components/analytics/GenericTeamCrest';
 import { RegenAvatar } from './RegenAvatar';
 import { getFmBadgeClasses } from './AttributeGrid';
 
@@ -68,6 +69,11 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
   );
   const [page, setPage] = useState(1);
 
+  const activeSelectedTeam = useMemo(() => {
+    if (selectedTeamId === 'ALL') return null;
+    return teams.find((t) => String(t.id) === selectedTeamId) || null;
+  }, [teams, selectedTeamId]);
+
   const filteredPlayers = useMemo(() => {
     const query = normalizeText(search);
     const pos = selectedPosition !== 'ALL' ? selectedPosition : null;
@@ -84,10 +90,12 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
         const webNorm = normalizeText(player.web_name || '');
         const fullNorm = normalizeText(player.full_name || '');
         const teamNorm = normalizeText(player.team?.short_name || player.team?.name || '');
+        const tlaNorm = normalizeText(player.team?.tla || '');
         if (
           !webNorm.includes(query) &&
           !fullNorm.includes(query) &&
-          !teamNorm.includes(query)
+          !teamNorm.includes(query) &&
+          !tlaNorm.includes(query)
         ) {
           return false;
         }
@@ -185,36 +193,115 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
             </div>
           </div>
 
-          {/* Club Filter Select */}
-          <div className="sm:w-56">
+          {/* Club Filter Select with Active Custom Club Crest */}
+          <div className="sm:w-64">
             <label
               htmlFor={teamSelectId}
               className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-zinc-400"
             >
               Premier League Club
             </label>
-            <select
-              id={teamSelectId}
-              name="teamId"
-              value={selectedTeamId}
-              onChange={(e) => {
-                setSelectedTeamId(e.target.value);
-                setPage(1);
-              }}
-              className="w-full rounded-xl border border-zinc-700/80 bg-zinc-950/80 px-3.5 py-2.5 text-sm text-white transition-colors focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
-            >
-              <option value="ALL">All Clubs ({teams.length})</option>
-              {teams.map((team) => (
-                <option key={team.id} value={String(team.id)}>
-                  {team.short_name} ({team.tla})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              {activeSelectedTeam && (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-950/90 p-1">
+                  <GenericTeamCrest
+                    team={{
+                      id: activeSelectedTeam.id,
+                      name: activeSelectedTeam.name,
+                      tla: activeSelectedTeam.tla,
+                    }}
+                    size={28}
+                  />
+                </div>
+              )}
+              <select
+                id={teamSelectId}
+                name="teamId"
+                value={selectedTeamId}
+                onChange={(e) => {
+                  setSelectedTeamId(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full rounded-xl border border-zinc-700/80 bg-zinc-950/80 px-3.5 py-2.5 text-sm text-white transition-colors focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              >
+                <option value="ALL">All Clubs ({teams.length})</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={String(team.id)}>
+                    {team.short_name} ({team.tla})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </form>
 
+        {/* Scrollable Custom Club Badge Strip */}
+        <div className="mt-4 border-t border-zinc-800/80 pt-3.5">
+          <div className="mb-2 flex items-center justify-between text-[11px] text-zinc-400">
+            <span className="font-semibold uppercase tracking-wider text-zinc-400">
+              Filter by Club Crest
+            </span>
+            {activeSelectedTeam && (
+              <span className="font-semibold text-emerald-400">
+                Active: {activeSelectedTeam.short_name} ({activeSelectedTeam.tla})
+              </span>
+            )}
+          </div>
+          <div
+            role="group"
+            aria-label="Filter players by club crest"
+            className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-zinc-800"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTeamId('ALL');
+                setPage(1);
+              }}
+              aria-pressed={selectedTeamId === 'ALL'}
+              className={`flex shrink-0 flex-col items-center justify-center rounded-xl border px-3 py-1.5 transition-all ${
+                selectedTeamId === 'ALL'
+                  ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-sm'
+                  : 'border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+              }`}
+            >
+              <span className="flex h-7 items-center font-mono text-xs font-black">ALL</span>
+              <span className="font-mono text-[10px] font-bold">CLUBS</span>
+            </button>
+
+            {teams.map((team) => {
+              const isSelected = selectedTeamId === String(team.id);
+              return (
+                <button
+                  key={team.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTeamId(isSelected ? 'ALL' : String(team.id));
+                    setPage(1);
+                  }}
+                  aria-pressed={isSelected}
+                  title={`${team.name} (${team.tla})`}
+                  className={`flex shrink-0 flex-col items-center justify-center rounded-xl border px-2.5 py-1.5 transition-all ${
+                    isSelected
+                      ? 'border-emerald-500 bg-zinc-800/90 ring-1 ring-emerald-500/50 scale-105 shadow-md'
+                      : 'border-zinc-800/70 bg-zinc-950/50 opacity-75 hover:opacity-100 hover:border-zinc-700 hover:bg-zinc-900'
+                  }`}
+                >
+                  <GenericTeamCrest
+                    team={{ id: team.id, name: team.name, tla: team.tla }}
+                    size={28}
+                  />
+                  <span className="mt-1 font-mono text-[10px] font-bold tracking-wider text-zinc-200">
+                    {team.tla}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Active Filter Summary Bar */}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800/80 pt-3 text-xs text-zinc-400">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800/80 pt-3 text-xs text-zinc-400">
           <div>
             Showing{' '}
             <span className="font-mono font-bold text-white">{paginatedPlayers.length}</span> of{' '}
@@ -259,7 +346,8 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
             const posClasses =
               POSITION_BADGE_CLASSES[player.primary_position] || POSITION_BADGE_CLASSES.MID;
             const ovrClasses = getFmBadgeClasses(player.overall_rating);
-            const teamColor = player.team?.primary_color || '#10b981';
+            const crestStyle = player.team ? getClubCrestStyle(player.team) : null;
+            const teamColor = crestStyle?.primary || player.team?.primary_color || '#10b981';
 
             return (
               <Link
@@ -267,22 +355,36 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
                 href={`/players/${player.id}`}
                 className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-zinc-800/90 bg-zinc-900/60 p-4 backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/50 hover:bg-zinc-900/90 hover:shadow-xl hover:shadow-emerald-950/20"
               >
-                {/* Top Row: Avatar + Name + Overall Pill */}
+                {/* Top Row: Avatar + Name + Custom Club Crest + Overall Pill */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <RegenAvatar
                       faceSeed={player.face_seed}
                       size={56}
                       alt={`${player.web_name} avatar`}
+                      team={player.team}
                       teamColor={teamColor}
+                      showClubBadge
                     />
                     <div className="min-w-0">
                       <h2 className="truncate text-base font-bold text-white group-hover:text-emerald-300 transition-colors">
                         {player.web_name}
                       </h2>
-                      <p className="truncate text-xs text-zinc-400">
-                        {player.team?.short_name || 'Premier League'}
-                      </p>
+                      <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
+                        {player.team && (
+                          <GenericTeamCrest
+                            team={{
+                              id: player.team.id,
+                              name: player.team.name,
+                              tla: player.team.tla,
+                            }}
+                            size={16}
+                          />
+                        )}
+                        <p className="truncate text-xs text-zinc-400">
+                          {player.team?.short_name || 'Premier League'}
+                        </p>
+                      </div>
                       <div className="mt-1.5 flex items-center gap-1.5">
                         <span
                           className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold ${posClasses}`}

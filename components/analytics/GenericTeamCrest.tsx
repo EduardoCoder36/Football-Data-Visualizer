@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId } from "react";
 import { getTeamColor } from "../../constants/teamColors";
 
 export type CrestPattern = "solid" | "stripes" | "shoulders" | "sash" | "halves";
@@ -10,7 +10,43 @@ export interface ClubCrestStyle {
   pattern: CrestPattern;
 }
 
-const CREST_STYLES_BY_TLA: Record<string, ClubCrestStyle> = {
+export const CANONICAL_TLA_BY_ID: Record<number, string> = {
+  57: "ARS",
+  58: "AVL",
+  1044: "BOU",
+  402: "BRE",
+  397: "BHA",
+  328: "BUR",
+  61: "CHE",
+  1076: "COV",
+  354: "CRY",
+  62: "EVE",
+  63: "FUL",
+  322: "HUL",
+  349: "IPS",
+  341: "LEE",
+  338: "LEI",
+  64: "LIV",
+  65: "MCI",
+  66: "MUN",
+  67: "NEW",
+  351: "NFO",
+  340: "SOU",
+  71: "SUN",
+  73: "TOT",
+  563: "WHU",
+  76: "WOL",
+};
+
+const TLA_ALIASES: Record<string, string> = {
+  AFC: "BOU",
+  AST: "AVL",
+  BRI: "BHA",
+  NOT: "NFO",
+  WES: "WHU",
+};
+
+export const CREST_STYLES_BY_TLA: Record<string, ClubCrestStyle> = {
   ARS: { primary: "#EF0107", secondary: "#FFFFFF", trim: "#D4AF37", pattern: "shoulders" },
   AVL: { primary: "#670E36", secondary: "#95BFE5", trim: "#FDBE11", pattern: "shoulders" },
   BOU: { primary: "#DA291C", secondary: "#111827", trim: "#D4AF37", pattern: "stripes" },
@@ -42,10 +78,68 @@ export interface GenericTeamCrestProps {
   team: {
     id: number;
     name: string;
-    tla: string;
+    tla?: string | null;
   };
   size?: number;
   className?: string;
+}
+
+export function resolveCanonicalTla(team: {
+  id?: number | null;
+  name?: string | null;
+  tla?: string | null;
+}): string {
+  if (team.id && CANONICAL_TLA_BY_ID[team.id]) {
+    return CANONICAL_TLA_BY_ID[team.id];
+  }
+  const rawTla = (team.tla || "").toUpperCase().trim();
+  if (rawTla && TLA_ALIASES[rawTla]) {
+    return TLA_ALIASES[rawTla];
+  }
+  const lowerName = (team.name || "").toLowerCase();
+  if (lowerName.includes("manchester city") || lowerName === "man city") return "MCI";
+  if (lowerName.includes("manchester united") || lowerName.includes("man utd")) return "MUN";
+  if (lowerName.includes("aston villa")) return "AVL";
+  if (lowerName.includes("bournemouth")) return "BOU";
+  if (lowerName.includes("brighton")) return "BHA";
+  if (lowerName.includes("nottingham")) return "NFO";
+  if (lowerName.includes("west ham")) return "WHU";
+  if (lowerName.includes("arsenal")) return "ARS";
+  if (lowerName.includes("liverpool")) return "LIV";
+  if (lowerName.includes("chelsea")) return "CHE";
+  if (lowerName.includes("tottenham") || lowerName.includes("spurs")) return "TOT";
+  if (lowerName.includes("newcastle")) return "NEW";
+  if (lowerName.includes("everton")) return "EVE";
+  if (lowerName.includes("fulham")) return "FUL";
+  if (lowerName.includes("crystal palace")) return "CRY";
+  if (lowerName.includes("brentford")) return "BRE";
+  if (lowerName.includes("wolverhampton") || lowerName.includes("wolves")) return "WOL";
+  if (lowerName.includes("sunderland")) return "SUN";
+  if (lowerName.includes("leeds")) return "LEE";
+  if (lowerName.includes("burnley")) return "BUR";
+
+  if (rawTla && CREST_STYLES_BY_TLA[rawTla]) {
+    return rawTla;
+  }
+  return (rawTla || (team.name || "CLB").slice(0, 3)).toUpperCase();
+}
+
+export function getClubCrestStyle(team: {
+  id?: number | null;
+  name?: string | null;
+  tla?: string | null;
+}): ClubCrestStyle {
+  const tla = resolveCanonicalTla(team);
+  if (CREST_STYLES_BY_TLA[tla]) {
+    return CREST_STYLES_BY_TLA[tla];
+  }
+  const fallbackColor = getTeamColor(team.id || 0, (team.id || 0) % 6);
+  return {
+    primary: fallbackColor,
+    secondary: "#1E293B",
+    trim: "#E2E8F0",
+    pattern: "halves",
+  };
 }
 
 const SHIELD_PATH =
@@ -56,16 +150,10 @@ export const GenericTeamCrest: React.FC<GenericTeamCrestProps> = ({
   size = 40,
   className = "",
 }) => {
-  const tla = (team.tla || team.name.slice(0, 3)).toUpperCase();
-  const fallbackColor = getTeamColor(team.id, team.id % 6);
-  const style: ClubCrestStyle = CREST_STYLES_BY_TLA[tla] || {
-    primary: fallbackColor,
-    secondary: "#1E293B",
-    trim: "#E2E8F0",
-    pattern: "halves",
-  };
-
-  const clipId = `crest-clip-${team.id}-${tla}`;
+  const uniqueId = useId();
+  const tla = resolveCanonicalTla(team);
+  const style = getClubCrestStyle(team);
+  const clipId = `crest-clip-${team.id}-${tla}-${uniqueId.replace(/:/g, "")}`;
 
   return (
     <svg
@@ -74,9 +162,9 @@ export const GenericTeamCrest: React.FC<GenericTeamCrestProps> = ({
       viewBox="0 0 48 48"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={`select-none ${className}`}
+      className={`select-none shrink-0 ${className}`}
       role="img"
-      aria-label={`${team.name} generic crest`}
+      aria-label={`${team.name} club crest`}
     >
       <defs>
         <clipPath id={clipId}>
