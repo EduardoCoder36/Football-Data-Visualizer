@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useId } from 'react';
+import React, { useState, useMemo, useId, useEffect } from 'react';
 import Link from 'next/link';
 import {
   PlayerListItem,
@@ -60,30 +60,42 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
   const searchInputId = useId();
   const teamSelectId = useId();
 
-  const [search, setSearch] = useState(initialSearch);
-  const [selectedPosition, setSelectedPosition] = useState<string>(
-    initialPosition.toUpperCase() || 'ALL'
+  const [search, setSearch] = useState<string>(initialSearch);
+  const [position, setPosition] = useState<string>(
+    (initialPosition || 'ALL').toUpperCase()
   );
-  const [selectedTeamId, setSelectedTeamId] = useState<string>(
+  const [selectedClub, setSelectedClub] = useState<string>(
     initialTeamId ? String(initialTeamId) : 'ALL'
   );
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState<number>(1);
+
+  useEffect(() => {
+    setSearch(initialSearch || '');
+  }, [initialSearch]);
+
+  useEffect(() => {
+    setPosition((initialPosition || 'ALL').toUpperCase());
+  }, [initialPosition]);
+
+  useEffect(() => {
+    setSelectedClub(initialTeamId ? String(initialTeamId) : 'ALL');
+  }, [initialTeamId]);
 
   const activeSelectedTeam = useMemo(() => {
-    if (selectedTeamId === 'ALL') return null;
-    return teams.find((t) => String(t.id) === selectedTeamId) || null;
-  }, [teams, selectedTeamId]);
+    if (selectedClub === 'ALL') return null;
+    return teams.find((t) => String(t.id) === selectedClub) || null;
+  }, [teams, selectedClub]);
 
   const filteredPlayers = useMemo(() => {
     const query = normalizeText(search);
-    const pos = selectedPosition !== 'ALL' ? selectedPosition : null;
-    const tId = selectedTeamId !== 'ALL' ? Number(selectedTeamId) : null;
+    const pos = position !== 'ALL' ? position : null;
+    const tId = selectedClub !== 'ALL' ? Number(selectedClub) : null;
 
     return initialPlayers.filter((player) => {
       if (pos && player.primary_position !== pos) {
         return false;
       }
-      if (tId && player.team_id !== tId) {
+      if (tId !== null && Number(player.team_id) !== tId) {
         return false;
       }
       if (query) {
@@ -102,7 +114,7 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
       }
       return true;
     });
-  }, [initialPlayers, search, selectedPosition, selectedTeamId]);
+  }, [initialPlayers, search, position, selectedClub]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPlayers.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -113,24 +125,20 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
 
   const handleClearFilters = () => {
     setSearch('');
-    setSelectedPosition('ALL');
-    setSelectedTeamId('ALL');
+    setPosition('ALL');
+    setSelectedClub('ALL');
     setPage(1);
   };
 
   return (
     <div>
-      {/* Search & Filter Controls inside semantic <search> landmark */}
-      <search className="mb-8 rounded-2xl border border-zinc-800/90 bg-zinc-900/60 p-4 sm:p-5 backdrop-blur-md shadow-lg">
-        <form
-          action="/players"
-          method="GET"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setPage(1);
-          }}
-          className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
-        >
+      {/* Search & Filter Controls */}
+      <div
+        role="search"
+        aria-label="Player directory filters"
+        className="mb-8 rounded-2xl border border-zinc-800/90 bg-zinc-900/60 p-4 sm:p-5 backdrop-blur-md shadow-lg"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           {/* Text Search Input */}
           <div className="flex-1">
             <label
@@ -170,17 +178,17 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
               className="inline-flex flex-wrap rounded-xl border border-zinc-800 bg-zinc-950/90 p-1"
             >
               {POSITION_TABS.map((tab) => {
-                const isActive = selectedPosition === tab.id;
+                const isActive = position === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => {
-                      setSelectedPosition(tab.id);
+                      setPosition(tab.id);
                       setPage(1);
                     }}
                     aria-pressed={isActive}
-                    className={`rounded-lg px-3.5 py-1.5 font-mono text-xs font-bold transition-all ${
+                    className={`cursor-pointer rounded-lg px-3.5 py-1.5 font-mono text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-emerald-500 text-neutral-950 shadow-sm shadow-emerald-500/30'
                         : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
@@ -217,12 +225,12 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
               <select
                 id={teamSelectId}
                 name="teamId"
-                value={selectedTeamId}
+                value={selectedClub}
                 onChange={(e) => {
-                  setSelectedTeamId(e.target.value);
+                  setSelectedClub(e.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-xl border border-zinc-700/80 bg-zinc-950/80 px-3.5 py-2.5 text-sm text-white transition-colors focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                className="w-full cursor-pointer rounded-xl border border-zinc-700/80 bg-zinc-950/80 px-3.5 py-2.5 text-sm text-white transition-colors focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               >
                 <option value="ALL">All Clubs ({teams.length})</option>
                 {teams.map((team) => (
@@ -233,7 +241,7 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
               </select>
             </div>
           </div>
-        </form>
+        </div>
 
         {/* Scrollable Custom Club Badge Strip */}
         <div className="mt-4 border-t border-zinc-800/80 pt-3.5">
@@ -255,12 +263,12 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
             <button
               type="button"
               onClick={() => {
-                setSelectedTeamId('ALL');
+                setSelectedClub('ALL');
                 setPage(1);
               }}
-              aria-pressed={selectedTeamId === 'ALL'}
-              className={`flex shrink-0 flex-col items-center justify-center rounded-xl border px-3 py-1.5 transition-all ${
-                selectedTeamId === 'ALL'
+              aria-pressed={selectedClub === 'ALL'}
+              className={`cursor-pointer flex shrink-0 flex-col items-center justify-center rounded-xl border px-3 py-1.5 transition-all ${
+                selectedClub === 'ALL'
                   ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-sm'
                   : 'border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
               }`}
@@ -270,18 +278,18 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
             </button>
 
             {teams.map((team) => {
-              const isSelected = selectedTeamId === String(team.id);
+              const isSelected = selectedClub === String(team.id);
               return (
                 <button
                   key={team.id}
                   type="button"
                   onClick={() => {
-                    setSelectedTeamId(isSelected ? 'ALL' : String(team.id));
+                    setSelectedClub(isSelected ? 'ALL' : String(team.id));
                     setPage(1);
                   }}
                   aria-pressed={isSelected}
                   title={`${team.name} (${team.tla})`}
-                  className={`flex shrink-0 flex-col items-center justify-center rounded-xl border px-2.5 py-1.5 transition-all ${
+                  className={`cursor-pointer flex shrink-0 flex-col items-center justify-center rounded-xl border px-2.5 py-1.5 transition-all ${
                     isSelected
                       ? 'border-emerald-500 bg-zinc-800/90 ring-1 ring-emerald-500/50 scale-105 shadow-md'
                       : 'border-zinc-800/70 bg-zinc-950/50 opacity-75 hover:opacity-100 hover:border-zinc-700 hover:bg-zinc-900'
@@ -311,17 +319,17 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
             players • Sorted by <span className="font-semibold text-zinc-200">Overall Rating</span>
           </div>
 
-          {(search || selectedPosition !== 'ALL' || selectedTeamId !== 'ALL') && (
+          {(search || position !== 'ALL' || selectedClub !== 'ALL') && (
             <button
               type="button"
               onClick={handleClearFilters}
-              className="font-semibold text-emerald-400 hover:text-emerald-300 underline underline-offset-4"
+              className="cursor-pointer font-semibold text-emerald-400 hover:text-emerald-300 underline underline-offset-4"
             >
               Reset all filters
             </button>
           )}
         </div>
-      </search>
+      </div>
 
       {/* Player Cards Grid */}
       {paginatedPlayers.length === 0 ? (
@@ -335,7 +343,7 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
           <button
             type="button"
             onClick={handleClearFilters}
-            className="mt-4 inline-flex items-center rounded-xl bg-emerald-500 px-4 py-2 text-xs font-black text-neutral-950 hover:bg-emerald-400 transition-colors"
+            className="mt-4 cursor-pointer inline-flex items-center rounded-xl bg-emerald-500 px-4 py-2 text-xs font-black text-neutral-950 hover:bg-emerald-400 transition-colors"
           >
             Reset Filters
           </button>
@@ -359,7 +367,8 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <RegenAvatar
-                      faceSeed={player.face_seed}
+                      faceSeed={player.face_seed || player.web_name || 'player'}
+                      fallbackName={player.web_name}
                       size={56}
                       alt={`${player.web_name} avatar`}
                       team={player.team}
@@ -454,7 +463,7 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
               type="button"
               disabled={safePage <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 font-semibold text-zinc-200 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="cursor-pointer rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 font-semibold text-zinc-200 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               ← Previous
             </button>
@@ -462,7 +471,7 @@ export const PlayerDirectoryClient: React.FC<PlayerDirectoryClientProps> = ({
               type="button"
               disabled={safePage >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 font-semibold text-zinc-200 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="cursor-pointer rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 font-semibold text-zinc-200 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next →
             </button>

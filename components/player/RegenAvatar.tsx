@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import GenericTeamCrest, { getClubCrestStyle } from '@/components/analytics/GenericTeamCrest';
 
 export interface RegenAvatarProps {
-  faceSeed: string;
+  faceSeed?: string | null;
+  fallbackName?: string;
   size?: number;
   alt?: string;
   teamColor?: string;
@@ -20,6 +21,7 @@ export interface RegenAvatarProps {
 
 export const RegenAvatar: React.FC<RegenAvatarProps> = ({
   faceSeed,
+  fallbackName,
   size = 96,
   alt = 'Player pixel avatar',
   teamColor,
@@ -28,10 +30,12 @@ export const RegenAvatar: React.FC<RegenAvatarProps> = ({
   priority = false,
   className = '',
 }) => {
-  const [loaded, setLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  const safeSeed = faceSeed || 'default-fm-regen';
+  const safeSeed =
+    (typeof faceSeed === 'string' && faceSeed.trim().length > 0
+      ? faceSeed.trim()
+      : fallbackName?.trim()) || 'player';
   const avatarUrl = `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(safeSeed)}&size=${size || 96}`;
 
   const crestStyle = team ? getClubCrestStyle(team) : null;
@@ -70,30 +74,16 @@ export const RegenAvatar: React.FC<RegenAvatarProps> = ({
           }}
         />
 
-        {/* Fallback loading skeleton */}
-        {!loaded && !hasError && (
-          <div
-            aria-hidden="true"
-            className="absolute inset-1.5 animate-pulse rounded-lg bg-zinc-800/80"
-          />
-        )}
-
         {!hasError ? (
           <img
             src={avatarUrl}
             alt={alt}
             width={size}
             height={size}
-            loading={priority ? undefined : 'lazy'}
-            {...(priority ? ({ fetchPriority: 'high' } as any) : {})}
-            onLoad={() => setLoaded(true)}
-            onError={() => {
-              setHasError(true);
-              setLoaded(true);
-            }}
-            className={`relative z-10 h-full w-full object-contain p-1 transition-opacity duration-200 [image-rendering:pixelated] ${
-              loaded ? 'opacity-100' : 'opacity-0'
-            }`}
+            loading={priority ? 'eager' : 'lazy'}
+            decoding="async"
+            onError={() => setHasError(true)}
+            className="relative z-10 h-full w-full object-contain p-1 [image-rendering:pixelated]"
           />
         ) : (
           <div

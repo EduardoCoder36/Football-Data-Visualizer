@@ -436,7 +436,8 @@ export default async function HomePage() {
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <RegenAvatar
-                      faceSeed={player.face_seed}
+                      faceSeed={player.face_seed || player.web_name || 'player'}
+                      fallbackName={player.web_name}
                       size={48}
                       alt={`${player.web_name} avatar`}
                       team={player.team}

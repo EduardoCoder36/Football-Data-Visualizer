@@ -56,7 +56,8 @@ export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) =>
         {/* Left: RegenAvatar + Player Identity + Custom Club Crest & Position */}
         <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center">
           <RegenAvatar
-            faceSeed={player.face_seed}
+            faceSeed={player.face_seed || player.web_name || 'player'}
+            fallbackName={player.web_name}
             size={104}
             alt={`${player.full_name} pixel regen avatar`}
             team={player.team}
