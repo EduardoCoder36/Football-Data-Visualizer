@@ -1,6 +1,6 @@
+import '@/styles/globals.css';
 import React from 'react';
 import type { Metadata } from 'next';
-import '../styles/globals.css';
 
 export const metadata: Metadata = {
   title: 'Premier League Tactical Analytics & Simulation Engine',
@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased selection:bg-emerald-500 selection:text-neutral-950">
+      <body className="bg-zinc-950 text-zinc-100 min-h-screen antialiased selection:bg-emerald-500 selection:text-neutral-950">
         {children}
       </body>
     </html>
