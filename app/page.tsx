@@ -1,13 +1,10 @@
 import React from 'react';
 import Link from 'next/link';
-import type { GetServerSideProps } from 'next';
 import { getPlayersList, PlayerListItem } from '@/lib/queries/players';
 import { RegenAvatar } from '@/components/player/RegenAvatar';
 import { getFmBadgeClasses } from '@/components/player/AttributeGrid';
 
-interface HomePageProps {
-  spotlightPlayers: PlayerListItem[];
-}
+export const dynamic = 'force-dynamic';
 
 const FALLBACK_SPOTLIGHT: PlayerListItem[] = [
   {
@@ -108,24 +105,17 @@ const FALLBACK_SPOTLIGHT: PlayerListItem[] = [
   },
 ];
 
-export const getServerSideProps: GetServerSideProps<HomePageProps> = async () => {
+export default async function HomePage() {
+  let spotlightPlayers: PlayerListItem[] = FALLBACK_SPOTLIGHT;
   try {
     const { players } = await getPlayersList({ limit: 6 });
-    return {
-      props: {
-        spotlightPlayers: players.length > 0 ? players : FALLBACK_SPOTLIGHT,
-      },
-    };
+    if (players.length > 0) {
+      spotlightPlayers = players;
+    }
   } catch {
-    return {
-      props: {
-        spotlightPlayers: FALLBACK_SPOTLIGHT,
-      },
-    };
+    spotlightPlayers = FALLBACK_SPOTLIGHT;
   }
-};
 
-export default function HomePage({ spotlightPlayers }: HomePageProps) {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 selection:bg-emerald-500 selection:text-neutral-950">
       {/* Background Ambient Glow */}

@@ -3,9 +3,9 @@ import type { Metadata } from 'next';
 import '../styles/globals.css';
 
 export const metadata: Metadata = {
-  title: 'Player Profiles & Scouting | Premier League Tactical Analytics',
+  title: 'Premier League Tactical Analytics & Simulation Engine',
   description:
-    'Football Manager-style 1–100 player attributes, 6-axis spider radar profiles, and deterministic pixel regens for the 2026/2027 Premier League season.',
+    'Form-weighted multi-pillar clash models, 18-month recency-decay baselines, FM 1–100 player attribute scouting, and calibrated Softmax probability forecasting.',
 };
 
 export default function RootLayout({
