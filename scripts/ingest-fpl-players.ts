@@ -226,7 +226,7 @@ export async function ingestFPLPlayers(): Promise<void> {
   console.log('⚙️ Transforming player elements into dev.players records...');
   let skippedUnmappedTeam = 0;
 
-  const playerRecords = [];
+  const playerRecords: Record<string, any>[] = [];
   for (const element of fplData.elements) {
     const resolvedTeamId = teamMapping.get(element.team);
 
