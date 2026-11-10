@@ -2,6 +2,7 @@
 
 import React, { useId } from 'react';
 import { PlayerRatingsData } from '@/lib/queries/players';
+import { getFmBadgeClasses, getFmBarColorClass } from '@/lib/utils/fmRating';
 
 export interface AttributeGridProps {
   ratings: PlayerRatingsData;
@@ -34,26 +35,6 @@ const PHYSICAL_AND_AERIAL_ATTRIBUTES: AttributeItem[] = [
   { key: 'stat_jumping', label: 'Jumping Reach', description: 'Aerial intervention rate per 90' },
   { key: 'stat_heading', label: 'Heading', description: 'Total positional aerial clearance output' },
 ];
-
-export function getFmBadgeClasses(value: number): string {
-  if (value >= 85) {
-    return 'text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-500/30';
-  }
-  if (value >= 70) {
-    return 'text-cyan-400 font-semibold bg-cyan-950/30 border border-cyan-500/20';
-  }
-  if (value >= 55) {
-    return 'text-zinc-200 font-medium border border-zinc-800 bg-zinc-900/60';
-  }
-  return 'text-zinc-500 border border-zinc-800/60 bg-zinc-950/40';
-}
-
-export function getFmBarColorClass(value: number): string {
-  if (value >= 85) return 'bg-emerald-400';
-  if (value >= 70) return 'bg-cyan-400';
-  if (value >= 55) return 'bg-zinc-400';
-  return 'bg-zinc-700';
-}
 
 export const AttributeGrid: React.FC<AttributeGridProps> = ({ ratings }) => {
   const sectionId = useId();

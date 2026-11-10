@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { getPlayersList, PlayerListItem } from '@/lib/queries/players';
 import { RegenAvatar } from '@/components/player/RegenAvatar';
-import { getFmBadgeClasses } from '@/components/player/AttributeGrid';
+import { getFmBadgeClasses } from '@/lib/utils/fmRating';
 import GenericTeamCrest from '@/components/analytics/GenericTeamCrest';
 
 export const dynamic = 'force-dynamic';

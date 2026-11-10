@@ -9,7 +9,7 @@ import {
 } from '@/lib/queries/players';
 import GenericTeamCrest, { getClubCrestStyle } from '@/components/analytics/GenericTeamCrest';
 import { RegenAvatar } from './RegenAvatar';
-import { getFmBadgeClasses } from './AttributeGrid';
+import { getFmBadgeClasses } from '@/lib/utils/fmRating';
 
 export interface PlayerDirectoryClientProps {
   initialPlayers: PlayerListItem[];

@@ -3,6 +3,7 @@
 import React from 'react';
 import { PlayerProfileData, PlayerPosition } from '@/lib/queries/players';
 import GenericTeamCrest, { getClubCrestStyle } from '@/components/analytics/GenericTeamCrest';
+import { getFmOvrRingClasses, getFmOvrTierLabel } from '@/lib/utils/fmRating';
 import { RegenAvatar } from './RegenAvatar';
 
 export interface PlayerHeroHeaderProps {
@@ -34,14 +35,7 @@ export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) =>
   const crestStyle = player.team ? getClubCrestStyle(player.team) : null;
   const teamColor = crestStyle?.primary || player.team?.primary_color || '#10b981';
 
-  const ovrRingClasses =
-    ovr >= 80
-      ? 'border-emerald-400 text-emerald-300 bg-emerald-950/60 shadow-emerald-500/20'
-      : ovr >= 70
-      ? 'border-cyan-400 text-cyan-300 bg-cyan-950/60 shadow-cyan-500/20'
-      : ovr >= 60
-      ? 'border-blue-400 text-blue-200 bg-blue-950/50 shadow-blue-500/15'
-      : 'border-zinc-600 text-zinc-200 bg-zinc-900/80';
+  const ovrRingClasses = getFmOvrRingClasses(ovr);
 
   const isDoubtful =
     player.is_injured &&
@@ -208,15 +202,7 @@ export const PlayerHeroHeader: React.FC<PlayerHeroHeaderProps> = ({ player }) =>
                 FM Overall
               </div>
               <div className="text-xs font-medium text-zinc-500">
-                {ovr >= 80
-                  ? 'World Class'
-                  : ovr >= 72
-                  ? 'First Team Star'
-                  : ovr >= 64
-                  ? 'Premier League Starter'
-                  : ovr > 50
-                  ? 'Squad Rotation'
-                  : 'Baseline'}
+                {getFmOvrTierLabel(ovr)}
               </div>
             </div>
             <div
