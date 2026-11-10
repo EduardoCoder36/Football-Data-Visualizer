@@ -183,6 +183,18 @@ def safe_float(val: Any) -> float:
         return 0.0
 
 
+def infer_season_from_date(match_date: str) -> str:
+    """Derives 'YYYY/YYYY+1' season string from an ISO match timestamp."""
+    if not match_date:
+        return "2026/2027"
+    try:
+        dt = datetime.fromisoformat(str(match_date).replace("Z", "+00:00"))
+        start_year = dt.year if dt.month >= 7 else dt.year - 1
+        return f"{start_year}/{start_year + 1}"
+    except Exception:
+        return "2026/2027"
+
+
 # ---------------------------------------------------------------------------
 # 4. API-Football Match Statistics Fetching & Parsing
 # ---------------------------------------------------------------------------
@@ -224,6 +236,7 @@ def extract_match_stat_rows(
         rows.append({
             "id": record_id,
             "fixture_id": int(fixture_id),
+            "season": infer_season_from_date(match_date),
             "competition_code": "PL",
             "match_date": match_date,
             "team_name": actual_team,
@@ -336,10 +349,13 @@ def generate_calibrated_match_stats(
     h_offsides = 1 + (h_seed % 4)
     a_offsides = 1 + (a_seed % 4)
 
+    season_str = infer_season_from_date(match_date)
+
     return [
         {
             "id": f"PL_{fixture_id}_{home_name.lower().replace(' ', '_')}",
             "fixture_id": int(fixture_id),
+            "season": season_str,
             "competition_code": "PL",
             "match_date": match_date,
             "team_name": home_name,
@@ -369,6 +385,7 @@ def generate_calibrated_match_stats(
         {
             "id": f"PL_{fixture_id}_{away_name.lower().replace(' ', '_')}",
             "fixture_id": int(fixture_id),
+            "season": season_str,
             "competition_code": "PL",
             "match_date": match_date,
             "team_name": away_name,
@@ -560,6 +577,12 @@ def sync_match_raw_stats() -> List[Dict[str, Any]]:
         for i in range(0, len(all_stat_rows), batch_size):
             batch = all_stat_rows[i : i + batch_size]
             supabase.table("match_raw_stats").upsert(batch, on_conflict="fixture_id,team_name").execute()
+            try:
+                supabase.schema("dev").table("match_raw_stats").upsert(
+                    batch, on_conflict="fixture_id,team_name"
+                ).execute()
+            except Exception as dev_err:
+                logger.warning(f"Could not mirror batch to dev.match_raw_stats: {dev_err}")
 
         logger.info(
             f"Successfully upserted {len(all_stat_rows)} records into 'match_raw_stats' "
@@ -569,8 +592,287 @@ def sync_match_raw_stats() -> List[Dict[str, Any]]:
     return all_stat_rows
 
 
+def _get_points_from_fixture(fixture: Dict[str, Any], team_id: int) -> int:
+    is_home = fixture.get("home_team_id") == team_id
+    team_score = fixture.get("home_score") if is_home else fixture.get("away_score")
+    opp_score = fixture.get("away_score") if is_home else fixture.get("home_score")
+    if team_score is None or opp_score is None:
+        return 0
+    if team_score > opp_score:
+        return 3
+    if team_score == opp_score:
+        return 1
+    return 0
+
+
+def recalculate_cumulative_trajectories(
+    current_season: str = "2026/2027",
+    previous_season: str = "2025/2026",
+) -> int:
+    """
+    Recalculates cumulative team_trajectories (Current Progress, Last Year's Pace,
+    and Same Opponents baselines) from confirmed finished fixtures and synchronizes
+    `fixtures`, `match_raw_stats`, and `team_trajectories` across both `public` and `dev` schemas.
+    """
+    logger.info("=" * 80)
+    logger.info(f"Recalculating Cumulative Trajectories & Baselines for {current_season}...")
+    logger.info("=" * 80)
+
+    # 1. Also reconcile any finished matches in `all_fixtures_schedule` into `fixtures`
+    teams_res = supabase.table("teams").select("*").execute()
+    teams = teams_res.data or []
+    if not teams:
+        logger.warning("No teams found in public.teams; skipping trajectory recalculation.")
+        return 0
+
+    canon_to_team_id: Dict[str, int] = {}
+    for t in teams:
+        tid = int(t["id"])
+        for raw_key in (t.get("name", ""), t.get("short_name", "")):
+            if raw_key:
+                canon_to_team_id[normalize_team(raw_key)] = tid
+                canon_to_team_id[raw_key.strip()] = tid
+
+    # Reconcile finished PL matches from all_fixtures_schedule -> public.fixtures if any were newly locked
+    sched_finished = (
+        supabase.table("all_fixtures_schedule")
+        .select("match_id, home_team, away_team, utc_date, status, home_score, away_score")
+        .eq("competition_code", "PL")
+        .eq("status", "FINISHED")
+        .execute()
+    ).data or []
+
+    cur_fixtures_res = (
+        supabase.table("fixtures")
+        .select("*")
+        .eq("season", current_season)
+        .execute()
+    )
+    cur_fixtures_by_id: Dict[int, Dict[str, Any]] = {
+        int(f["id"]): f for f in (cur_fixtures_res.data or [])
+    }
+
+    fixtures_to_update: List[Dict[str, Any]] = []
+    for sf in sched_finished:
+        mid = int(sf["match_id"])
+        existing = cur_fixtures_by_id.get(mid)
+        if existing and existing.get("status") != "FINISHED" and sf.get("home_score") is not None:
+            updated_row = dict(existing)
+            updated_row["status"] = "FINISHED"
+            updated_row["home_score"] = int(sf["home_score"])
+            updated_row["away_score"] = int(sf["away_score"])
+            fixtures_to_update.append(updated_row)
+
+    if fixtures_to_update:
+        logger.info(f"Updating {len(fixtures_to_update)} newly finished fixtures in public.fixtures...")
+        supabase.table("fixtures").upsert(fixtures_to_update, on_conflict="id").execute()
+
+    # 2. Fetch Replacements & Season Fixtures
+    repl_res = (
+        supabase.table("relegated_replacements")
+        .select("*")
+        .eq("season", current_season)
+        .execute()
+    )
+    promoted_to_relegated: Dict[int, int] = {
+        int(r["promoted_team_id"]): int(r["relegated_team_id"])
+        for r in (repl_res.data or [])
+    }
+
+    all_cur_fixtures = (
+        supabase.table("fixtures")
+        .select("*")
+        .eq("season", current_season)
+        .order("kickoff")
+        .execute()
+    ).data or []
+
+    all_prev_fixtures = (
+        supabase.table("fixtures")
+        .select("*")
+        .eq("season", previous_season)
+        .eq("status", "FINISHED")
+        .order("kickoff")
+        .execute()
+    ).data or []
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    all_trajectory_rows: List[Dict[str, Any]] = []
+
+    for team in teams:
+        team_id = int(team["id"])
+        is_promoted = bool(team.get("is_promoted", False))
+
+        team_cur = [
+            f
+            for f in all_cur_fixtures
+            if f.get("status") in ("FINISHED", "POSTPONED")
+            and (f.get("home_team_id") == team_id or f.get("away_team_id") == team_id)
+        ]
+        if not team_cur:
+            continue
+
+        team_prev = [
+            f
+            for f in all_prev_fixtures
+            if f.get("home_team_id") == team_id or f.get("away_team_id") == team_id
+        ]
+
+        cum_pts = 0
+        cum_gf = 0
+        cum_ga = 0
+
+        for idx, match in enumerate(team_cur):
+            games_played = idx + 1
+            is_completed = True
+
+            if match.get("status") == "FINISHED":
+                if match.get("home_score") is None or match.get("away_score") is None:
+                    continue
+                is_home = match.get("home_team_id") == team_id
+                t_score = int(match["home_score"] if is_home else match["away_score"])
+                o_score = int(match["away_score"] if is_home else match["home_score"])
+                cum_gf += t_score
+                cum_ga += o_score
+                if t_score > o_score:
+                    cum_pts += 3
+                elif t_score == o_score:
+                    cum_pts += 1
+            elif match.get("status") == "POSTPONED":
+                is_completed = False
+
+            base_pts: Optional[int] = None
+            base_gf: Optional[int] = None
+            base_ga: Optional[int] = None
+            same_opp_pts: Optional[int] = None
+            same_opp_gf: Optional[int] = None
+            same_opp_ga: Optional[int] = None
+
+            if not is_promoted and team_prev:
+                past_stage = team_prev[:games_played]
+                base_pts = 0
+                base_gf = 0
+                base_ga = 0
+                for pf in past_stage:
+                    base_pts += _get_points_from_fixture(pf, team_id)
+                    p_home = pf.get("home_team_id") == team_id
+                    base_gf += int((pf.get("home_score") if p_home else pf.get("away_score")) or 0)
+                    base_ga += int((pf.get("away_score") if p_home else pf.get("home_score")) or 0)
+
+                same_opp_pts = 0
+                same_opp_gf = 0
+                same_opp_ga = 0
+                finished_so_far = [
+                    m for m in team_cur[:games_played] if m.get("status") == "FINISHED"
+                ]
+                for cm in finished_so_far:
+                    c_home = cm.get("home_team_id") == team_id
+                    cur_opp_id = int(cm["away_team_id"] if c_home else cm["home_team_id"])
+                    target_opp_id = promoted_to_relegated.get(cur_opp_id, cur_opp_id)
+                    hist_match = next(
+                        (
+                            pm
+                            for pm in team_prev
+                            if (
+                                c_home
+                                and pm.get("home_team_id") == team_id
+                                and pm.get("away_team_id") == target_opp_id
+                            )
+                            or (
+                                not c_home
+                                and pm.get("away_team_id") == team_id
+                                and pm.get("home_team_id") == target_opp_id
+                            )
+                        ),
+                        None,
+                    )
+                    if hist_match:
+                        same_opp_pts += _get_points_from_fixture(hist_match, team_id)
+                        h_home = hist_match.get("home_team_id") == team_id
+                        same_opp_gf += int(
+                            (hist_match.get("home_score") if h_home else hist_match.get("away_score"))
+                            or 0
+                        )
+                        same_opp_ga += int(
+                            (hist_match.get("away_score") if h_home else hist_match.get("home_score"))
+                            or 0
+                        )
+
+            all_trajectory_rows.append({
+                "team_id": team_id,
+                "season": current_season,
+                "games_played": games_played,
+                "is_completed": is_completed,
+                "cumulative_points": cum_pts,
+                "cumulative_goals_for": cum_gf,
+                "cumulative_goals_against": cum_ga,
+                "baseline_points": base_pts,
+                "baseline_goals_for": base_gf,
+                "baseline_goals_against": base_ga,
+                "same_opponent_points": same_opp_pts,
+                "same_opponent_goals_for": same_opp_gf,
+                "same_opponent_goals_against": same_opp_ga,
+                "updated_at": now_utc,
+            })
+
+    if all_trajectory_rows:
+        supabase.table("team_trajectories").upsert(
+            all_trajectory_rows, on_conflict="team_id,season,games_played"
+        ).execute()
+        logger.info(f"Upserted {len(all_trajectory_rows)} rows into public.team_trajectories.")
+
+    # 3. Mirror latest current_season fixtures, match_raw_stats, and team_trajectories to `dev` schema
+    dev_sb = supabase.schema("dev")
+
+    try:
+        if all_cur_fixtures:
+            for i in range(0, len(all_cur_fixtures), 100):
+                dev_sb.table("fixtures").upsert(
+                    all_cur_fixtures[i : i + 100], on_conflict="id"
+                ).execute()
+    except Exception as dev_fix_err:
+        logger.warning(f"Schema mirror to 'dev.fixtures' warning: {dev_fix_err}")
+
+    cur_raw_stats: List[Dict[str, Any]] = []
+    try:
+        cur_raw_stats = (
+            supabase.table("match_raw_stats")
+            .select("*")
+            .eq("season", current_season)
+            .execute()
+        ).data or []
+        if cur_raw_stats:
+            for i in range(0, len(cur_raw_stats), 100):
+                dev_sb.table("match_raw_stats").upsert(
+                    cur_raw_stats[i : i + 100],
+                    on_conflict="fixture_id,team_name",
+                ).execute()
+    except Exception as dev_raw_err:
+        logger.warning(f"Schema mirror to 'dev.match_raw_stats' warning: {dev_raw_err}")
+
+    try:
+        if all_trajectory_rows:
+            # Replace current_season rows cleanly in dev.team_trajectories so out-of-sync identity sequence never collides
+            dev_sb.table("team_trajectories").delete().eq("season", current_season).execute()
+            for i in range(0, len(all_trajectory_rows), 100):
+                dev_sb.table("team_trajectories").upsert(
+                    all_trajectory_rows[i : i + 100],
+                    on_conflict="team_id,season,games_played",
+                ).execute()
+
+        logger.info(
+            f"Synchronized dev schema: {len(all_cur_fixtures)} fixtures, "
+            f"{len(all_trajectory_rows)} trajectory nodes, {len(cur_raw_stats)} match_raw_stats rows."
+        )
+    except Exception as dev_traj_err:
+        logger.warning(f"Schema mirror to 'dev.team_trajectories' warning: {dev_traj_err}")
+
+    return len(all_trajectory_rows)
+
+
 def main():
     sync_match_raw_stats()
+    recalculate_cumulative_trajectories()
 
 
 if __name__ == "__main__":

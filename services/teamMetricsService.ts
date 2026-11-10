@@ -223,8 +223,13 @@ export async function fetchTeamMetrics(
   ]);
 
   const idToCanonicalName = new Map<number, string>();
+  let selectedTeamId: number | null = null;
   (teamCatalog || []).forEach((t: any) => {
-    idToCanonicalName.set(t.id, getCanonicalTeamName(t.name));
+    const cName = getCanonicalTeamName(t.name);
+    idToCanonicalName.set(t.id, cName);
+    if (cName === canonicalName) {
+      selectedTeamId = Number(t.id);
+    }
   });
 
   // promoted canonical team name -> relegated canonical team name
@@ -239,37 +244,68 @@ export async function fetchTeamMetrics(
 
   const isSelectedClubPromoted = promotedToRelegatedMap.has(canonicalName);
 
-  // 3. Fetch team's match_raw_stats for both currentSeason and previousSeason ordered chronologically
-  const { data: teamRows, error: teamErr } = await supabase
-    .from('match_raw_stats')
-    .select(
-      'fixture_id, season, match_date, team_name, opponent_name, is_home, goals, expected_goals, possession_pct, shots_total, shots_on_target, shots_off_target, shots_blocked, corners'
-    )
-    .eq('team_name', canonicalName)
-    .in('season', [currentSeason, previousSeason])
-    .order('match_date', { ascending: true });
+  // 3. Fetch team's match_raw_stats AND confirmed FINISHED fixtures (so missing deep telemetry never drops a finished matchday)
+  const [rawStatsRes, confirmedFixturesRes] = await Promise.all([
+    supabase
+      .from('match_raw_stats')
+      .select(
+        'fixture_id, season, match_date, team_name, opponent_name, is_home, goals, expected_goals, possession_pct, shots_total, shots_on_target, shots_off_target, shots_blocked, corners'
+      )
+      .eq('team_name', canonicalName)
+      .order('match_date', { ascending: true }),
+    selectedTeamId !== null
+      ? supabase
+          .from('fixtures')
+          .select('id, season, matchday, kickoff, status, home_team_id, away_team_id, home_score, away_score')
+          .in('season', [currentSeason, previousSeason])
+          .eq('status', 'FINISHED')
+          .or(`home_team_id.eq.${selectedTeamId},away_team_id.eq.${selectedTeamId}`)
+          .order('kickoff', { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
-  if (teamErr || !teamRows || teamRows.length === 0) {
+  const teamRows = rawStatsRes.data || [];
+  const confirmedFixtures = confirmedFixturesRes.data || [];
+
+  if (teamRows.length === 0 && confirmedFixtures.length === 0) {
     return [];
   }
 
   // 4. Fetch opponent match_raw_stats for these fixtures to extract conceded goals and aXG
-  const fixtureIds = teamRows.map((r: any) => r.fixture_id);
-  const { data: oppRows } = await supabase
-    .from('match_raw_stats')
-    .select('fixture_id, team_name, goals, expected_goals')
-    .in('fixture_id', fixtureIds)
-    .neq('team_name', canonicalName);
+  const fixtureIds = Array.from(
+    new Set([
+      ...teamRows.map((r: any) => Number(r.fixture_id)),
+      ...confirmedFixtures.map((f: any) => Number(f.id)),
+    ])
+  );
+  const { data: oppRows } =
+    fixtureIds.length > 0
+      ? await supabase
+          .from('match_raw_stats')
+          .select('fixture_id, team_name, goals, expected_goals')
+          .in('fixture_id', fixtureIds)
+          .neq('team_name', canonicalName)
+      : { data: [] };
 
   const oppMap = new Map<number, any>();
   if (oppRows) {
     oppRows.forEach((o: any) => {
-      oppMap.set(o.fixture_id, o);
+      oppMap.set(Number(o.fixture_id), o);
     });
   }
 
+  const inferSeason = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return currentSeason;
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return currentSeason;
+    const yr = d.getUTCFullYear();
+    const mo = d.getUTCMonth() + 1;
+    const startYr = mo >= 7 ? yr : yr - 1;
+    return `${startYr}/${startYr + 1}`;
+  };
+
   const parseRow = (r: any): ParsedMatchMetrics => {
-    const opp = oppMap.get(r.fixture_id);
+    const opp = oppMap.get(Number(r.fixture_id));
     const mGoals = Number(r.goals) || 0;
     const mConceded = Number(opp?.goals) || 0;
     const mXg = Number(r.expected_goals) || 0;
@@ -285,7 +321,7 @@ export async function fetchTeamMetrics(
     const scoreDisplay = `${mGoals}-${mConceded} vs ${oppName} (${venue})`;
 
     return {
-      fixture_id: r.fixture_id,
+      fixture_id: Number(r.fixture_id),
       match_date: r.match_date,
       opponent_canonical: oppName,
       is_home: isHome,
@@ -301,16 +337,61 @@ export async function fetchTeamMetrics(
     };
   };
 
-  const currentMatches: ParsedMatchMetrics[] = [];
-  const previousMatches: ParsedMatchMetrics[] = [];
+  const currentMap = new Map<number, ParsedMatchMetrics>();
+  const previousMap = new Map<number, ParsedMatchMetrics>();
 
   teamRows.forEach((r: any) => {
-    if (r.season === currentSeason) {
-      currentMatches.push(parseRow(r));
-    } else if (r.season === previousSeason) {
-      previousMatches.push(parseRow(r));
+    const rowSeason = r.season || inferSeason(r.match_date);
+    if (rowSeason === currentSeason) {
+      currentMap.set(Number(r.fixture_id), parseRow(r));
+    } else if (rowSeason === previousSeason) {
+      previousMap.set(Number(r.fixture_id), parseRow(r));
     }
   });
+
+  // Backfill any confirmed FINISHED fixtures whose deep match_raw_stats telemetry hasn't arrived yet
+  confirmedFixtures.forEach((f: any) => {
+    const fid = Number(f.id);
+    if (f.home_score === null || f.away_score === null || selectedTeamId === null) return;
+    const targetMap =
+      f.season === currentSeason
+        ? currentMap
+        : f.season === previousSeason
+        ? previousMap
+        : null;
+    if (!targetMap || targetMap.has(fid)) return;
+
+    const isHome = Number(f.home_team_id) === selectedTeamId;
+    const mGoals = Number(isHome ? f.home_score : f.away_score) || 0;
+    const mConceded = Number(isHome ? f.away_score : f.home_score) || 0;
+    const mPts = mGoals > mConceded ? 3 : mGoals === mConceded ? 1 : 0;
+    const oppId = Number(isHome ? f.away_team_id : f.home_team_id);
+    const oppName = idToCanonicalName.get(oppId) || 'Opponent';
+    const venue = isHome ? 'H' : 'A';
+
+    targetMap.set(fid, {
+      fixture_id: fid,
+      match_date: f.kickoff,
+      opponent_canonical: oppName,
+      is_home: isHome,
+      goals: mGoals,
+      conceded: mConceded,
+      xg: 0,
+      axg: 0,
+      points: mPts,
+      shots_on_target: 0,
+      shots_off_target: 0,
+      corners: 0,
+      score_display: `${mGoals}-${mConceded} vs ${oppName} (${venue})`,
+    });
+  });
+
+  const currentMatches: ParsedMatchMetrics[] = Array.from(currentMap.values()).sort((a, b) =>
+    String(a.match_date || '').localeCompare(String(b.match_date || ''))
+  );
+  const previousMatches: ParsedMatchMetrics[] = Array.from(previousMap.values()).sort((a, b) =>
+    String(a.match_date || '').localeCompare(String(b.match_date || ''))
+  );
 
   // 5. Build running cumulative series across up to 38 gameweeks
   const totalSlots = Math.max(currentMatches.length, previousMatches.length);

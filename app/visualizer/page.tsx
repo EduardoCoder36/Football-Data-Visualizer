@@ -58,8 +58,9 @@ export default function VisualizerPage() {
 
       const { data: activeFixtures } = await supabase
         .from('fixtures')
-        .select('home_team_id')
-        .eq('season', currentSeason);
+        .select('id, matchday, kickoff, status, home_team_id, away_team_id, home_score, away_score')
+        .eq('season', currentSeason)
+        .order('kickoff', { ascending: true });
 
       const activeTeamIds = new Set((activeFixtures || []).map((f) => f.home_team_id));
 
@@ -73,6 +74,7 @@ export default function VisualizerPage() {
         .select(
           'team_id, games_played, is_completed, cumulative_points, cumulative_goals_for, cumulative_goals_against, baseline_points, baseline_goals_for, baseline_goals_against, same_opponent_points, same_opponent_goals_for, same_opponent_goals_against'
         )
+        .eq('season', currentSeason)
         .order('games_played', { ascending: true });
 
       if (teamRows) {
@@ -92,9 +94,72 @@ export default function VisualizerPage() {
         );
       }
 
-      if (trajectoryRows) {
-        setTrajectories(trajectoryRows);
+      // Reconcile trajectoryRows with any newly FINISHED fixtures in `fixtures` that haven't been precomputed yet
+      const baseTrajectories: TrajectoryDataRow[] = [...(trajectoryRows || [])];
+      if (activeFixtures && activeFixtures.length > 0) {
+        const finishedByTeam = new Map<number, typeof activeFixtures>();
+        activeFixtures.forEach((f) => {
+          if (f.status === 'FINISHED' && f.home_score !== null && f.away_score !== null) {
+            if (!finishedByTeam.has(f.home_team_id)) finishedByTeam.set(f.home_team_id, []);
+            if (!finishedByTeam.has(f.away_team_id)) finishedByTeam.set(f.away_team_id, []);
+            finishedByTeam.get(f.home_team_id)!.push(f);
+            finishedByTeam.get(f.away_team_id)!.push(f);
+          }
+        });
+
+        finishedByTeam.forEach((teamFinished, teamId) => {
+          const existingForTeam = baseTrajectories
+            .filter((r) => r.team_id === teamId)
+            .sort((a, b) => a.games_played - b.games_played);
+          const maxExistingGP =
+            existingForTeam.length > 0
+              ? existingForTeam[existingForTeam.length - 1].games_played
+              : 0;
+
+          if (teamFinished.length > maxExistingGP) {
+            let cumPts =
+              existingForTeam.length > 0
+                ? existingForTeam[existingForTeam.length - 1].cumulative_points
+                : 0;
+            let cumGf =
+              existingForTeam.length > 0
+                ? existingForTeam[existingForTeam.length - 1].cumulative_goals_for
+                : 0;
+            let cumGa =
+              existingForTeam.length > 0
+                ? existingForTeam[existingForTeam.length - 1].cumulative_goals_against
+                : 0;
+
+            for (let i = maxExistingGP; i < teamFinished.length; i++) {
+              const m = teamFinished[i];
+              const isHome = m.home_team_id === teamId;
+              const gf = (isHome ? m.home_score : m.away_score) ?? 0;
+              const ga = (isHome ? m.away_score : m.home_score) ?? 0;
+              cumGf += gf;
+              cumGa += ga;
+              if (gf > ga) cumPts += 3;
+              else if (gf === ga) cumPts += 1;
+
+              baseTrajectories.push({
+                team_id: teamId,
+                games_played: i + 1,
+                is_completed: true,
+                cumulative_points: cumPts,
+                cumulative_goals_for: cumGf,
+                cumulative_goals_against: cumGa,
+                baseline_points: null,
+                baseline_goals_for: null,
+                baseline_goals_against: null,
+                same_opponent_points: null,
+                same_opponent_goals_for: null,
+                same_opponent_goals_against: null,
+              });
+            }
+          }
+        });
       }
+
+      setTrajectories(baseTrajectories);
 
       setLoading(false);
     }

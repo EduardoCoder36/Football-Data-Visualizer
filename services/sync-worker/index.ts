@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { FootballDataClient } from "./footballDataClient";
 import { SyncEngine } from "./syncEngine";
 
@@ -10,20 +10,33 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const syncOptions = {
+  currentSeason: "2026/2027",
+  previousSeason: "2025/2026",
+  currentSeasonYear: 2026,
+  previousSeasonYear: 2025,
+};
 
-const footballData = new FootballDataClient(process.env.FOOTBALL_DATA_API_KEY!);
-const engine = new SyncEngine(supabase, footballData);
+async function runAllSchemas() {
+  const footballData = new FootballDataClient(process.env.FOOTBALL_DATA_API_KEY!);
 
-// Example run for 2026/2027 season
-engine
-  .runSync({
-    currentSeason: "2026/2027",
-    previousSeason: "2025/2026",
-    currentSeasonYear: 2026,
-    previousSeasonYear: 2025,
-  })
-  .then(() => console.log("Sync finished successfully."))
+  const publicClient = createClient(supabaseUrl!, supabaseKey!);
+  const publicEngine = new SyncEngine(publicClient, footballData);
+  await publicEngine.runSync(syncOptions);
+
+  try {
+    const devClient = createClient(supabaseUrl!, supabaseKey!, {
+      db: { schema: "dev" as "public" },
+    }) as unknown as SupabaseClient;
+    const devEngine = new SyncEngine(devClient, footballData);
+    await devEngine.runSync(syncOptions);
+  } catch (err) {
+    console.warn("Non-fatal warning syncing dev schema:", err);
+  }
+}
+
+runAllSchemas()
+  .then(() => console.log("Sync finished successfully across schemas."))
   .catch((err) => {
     console.error("Sync failed:", err);
     process.exit(1);

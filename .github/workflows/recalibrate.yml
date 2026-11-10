@@ -20,12 +20,14 @@ jobs:
         run: |
           pip install pandas soccerdata supabase python-dotenv requests
 
-      - name: Run Extraction and Prediction Engine
+      - name: Run Extraction, Trajectory Baseline Recalibration & Prediction Engine
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
+          python scripts/sync_match_raw_stats.py
           python scripts/fetch_tactical_data.py
           python scripts/sync_upcoming_predictions.py
